@@ -1115,10 +1115,36 @@ function OverviewView({ sectors, indicators, dataValues, collaborators, onNaviga
                       </div>
                     )}
                   </div>
-                  <span className="text-xs font-bold text-[#FF6B00] flex items-center gap-1">
-                    <ArrowUpRight size={14} />
-                    +12% este mês
-                  </span>
+                  {(() => {
+                    const csatInd = sectorInds.find(i => i.name.toLowerCase().includes('csat'));
+                    let csatDisplay = '-';
+                    if (csatInd) {
+                      const sectorOverride = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === 'sector');
+                      if (sectorOverride && sectorOverride.value !== undefined && sectorOverride.value !== '' && sectorOverride.value !== '-') {
+                        const valStr = String(sectorOverride.value);
+                        csatDisplay = valStr.endsWith('%') ? valStr : `${valStr}%`;
+                      } else {
+                        const colabValues = sectorColabs.map(c => {
+                          const v = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === c.id)?.value;
+                          if (v === undefined || v === '-' || v === '') return 0;
+                          const num = parseFloat(String(v).replace(',', '.'));
+                          return isNaN(num) ? 0 : num;
+                        });
+                        const total = colabValues.reduce((a, b) => a + b, 0);
+                        const avg = sectorColabs.length > 0 ? total / sectorColabs.length : 0;
+                        csatDisplay = avg > 0 ? `${avg.toFixed(1)}%` : '-';
+                      }
+                    }
+                    return (
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-1">CSAT Médio</span>
+                        <span className="text-sm font-black text-[#FF6B00] flex items-center gap-1">
+                          <CheckCircle2 size={14} />
+                          {csatDisplay}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </Card>
             </div>
