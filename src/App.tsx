@@ -823,12 +823,14 @@ function SectorDashboard({
   const getRowTotal = (indicator: Indicator) => {
     const values = collaborators.map(c => {
       const v = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === c.id)?.value;
-      return v === undefined || v === '-' || v === '' ? 0 : Number(v);
+      if (v === undefined || v === '-' || v === '') return 0;
+      const num = parseFloat(String(v).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
+      return isNaN(num) ? 0 : num;
     });
     const total = values.reduce((a, b) => a + b, 0);
     
     if (indicator.type === 'percentage') {
-       return collaborators.length > 0 ? Math.round(total / collaborators.length) : 0;
+       return collaborators.length > 0 ? total / collaborators.length : 0;
     }
     return total;
   };
@@ -902,6 +904,8 @@ function SectorDashboard({
                 <tbody className="divide-y divide-gray-100">
                   {indicators.map(indicator => {
                     const rowTotal = getRowTotal(indicator);
+                    const sectorValue = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === 'sector' && dv.monthId === monthId)?.value;
+                    const displayValue = sectorValue !== undefined && sectorValue !== '' ? sectorValue : rowTotal;
                     const isNegative = indicator.name.toLowerCase().includes('perdido') || indicator.name.toLowerCase().includes('cancelamento');
                     
                     return (
@@ -940,13 +944,24 @@ function SectorDashboard({
                             </td>
                           );
                         })}
-                        <td className="p-5 text-center bg-orange-50/50">
-                          <span className={cn(
-                            "text-sm font-black",
-                            isNegative && rowTotal > 0 ? "text-red-600" : "text-[#FF6B00]"
-                          )}>
-                            {formatValue(rowTotal, indicator.type)}
-                          </span>
+                        <td className="p-0 text-center bg-orange-50/50 relative">
+                          <input 
+                            type="text"
+                            key={`${indicator.id}-sector-${displayValue}-${monthId}`}
+                            className={cn(
+                              "w-full h-full p-5 text-center text-sm font-black focus:bg-white focus:outline-none transition-colors",
+                              isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : "text-[#FF6B00]"
+                            )}
+                            defaultValue={sectorValue !== undefined && sectorValue !== '' ? sectorValue : formatValue(rowTotal, indicator.type)}
+                            onBlur={(e) => {
+                              const val = e.target.value;
+                              const currentFormatted = formatValue(rowTotal, indicator.type);
+                              if (val !== currentFormatted || (sectorValue !== undefined && val !== sectorValue)) {
+                                onSaveValue(indicator.id, 'sector', val);
+                              }
+                            }}
+                            placeholder="-"
+                          />
                         </td>
                       </tr>
                     );
@@ -970,7 +985,7 @@ function SectorDashboard({
           </div>
         </div>
 
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-8 sticky top-24 self-start h-fit">
           {/* Brasão do Time */}
           <Card 
             className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-[#FF6B00] border-none relative overflow-hidden group cursor-pointer"
