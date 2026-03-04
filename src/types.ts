@@ -29,6 +29,7 @@ export interface Indicator {
   name: string;
   type: IndicatorType;
   order: number;
+  isSectorOnly?: boolean;
 }
 
 export interface DataValue {

@@ -923,6 +923,16 @@ function SectorDashboard({
                           const val = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === c.id)?.value;
                           const isMetaMet = c.meta && !isNaN(Number(val)) && Number(val) >= c.meta;
                           
+                          if (indicator.isSectorOnly) {
+                            return (
+                              <td key={c.id} className="p-0 border-r border-gray-50 bg-gray-50/20 relative">
+                                <div className="w-full h-full p-5 flex items-center justify-center text-gray-300">
+                                  -
+                                </div>
+                              </td>
+                            );
+                          }
+
                           return (
                             <td key={c.id} className="p-0 border-r border-gray-50 relative">
                               <input 
@@ -1196,9 +1206,10 @@ function CollaboratorForm({ initialData, onSubmit, onCancel }: { initialData?: C
 function IndicatorForm({ initialData, onSubmit, onCancel }: { initialData?: Indicator, onSubmit: (data: Partial<Indicator>) => void, onCancel: () => void }) {
   const [name, setName] = useState(initialData?.name || '');
   const [type, setType] = useState<IndicatorType>(initialData?.type || 'number');
+  const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || false);
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, type }); }} className="space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, type, isSectorOnly }); }} className="space-y-6">
       <Input label="Nome do Indicador" value={name} onChange={(e) => setName(e.target.value)} required />
       <Select 
         label="Tipo de Dado" 
@@ -1210,6 +1221,18 @@ function IndicatorForm({ initialData, onSubmit, onCancel }: { initialData?: Indi
           { value: 'currency', label: 'Valor em R$' },
         ]}
       />
+      <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
+        <input 
+          type="checkbox" 
+          id="isSectorOnly" 
+          checked={isSectorOnly} 
+          onChange={(e) => setIsSectorOnly(e.target.checked)}
+          className="w-4 h-4 text-[#FF6B00] border-gray-300 rounded focus:ring-[#FF6B00] cursor-pointer"
+        />
+        <label htmlFor="isSectorOnly" className="text-sm font-bold text-gray-700 cursor-pointer select-none">
+          Indicador apenas do setor (não pertence a colaboradores)
+        </label>
+      </div>
       <div className="flex justify-end gap-3 pt-4">
         <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
         <Button type="submit">{initialData ? 'Salvar Alterações' : 'Adicionar Indicador'}</Button>
