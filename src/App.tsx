@@ -184,6 +184,7 @@ export default function App() {
   
   // Modals state
   const [isNewMonthModalOpen, setIsNewMonthModalOpen] = useState(false);
+  const [isEditMonthModalOpen, setIsEditMonthModalOpen] = useState(false);
   const [isCollaboratorModalOpen, setIsCollaboratorModalOpen] = useState(false);
   const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
   const [editingCollaborator, setEditingCollaborator] = useState<Collaborator | null>(null);
@@ -363,6 +364,44 @@ export default function App() {
 
     await fetchMonths();
     setIsNewMonthModalOpen(false);
+  };
+
+  const handleUpdateMonth = async (id: string, name: string) => {
+    await updateDoc(doc(db, 'months', id), { name });
+    setMonths(months.map(m => m.id === id ? { ...m, name } : m));
+    setIsEditMonthModalOpen(false);
+  };
+
+  const handleDeleteMonth = async (id: string) => {
+    if (confirm('Deseja excluir este mês e todos os seus dados? Esta ação não pode ser desfeita.')) {
+      const batch = writeBatch(db);
+      
+      // Delete dataValues
+      const valSnap = await getDocs(query(collection(db, 'dataValues'), where('monthId', '==', id)));
+      valSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      // Delete indicators
+      const indSnap = await getDocs(query(collection(db, 'indicators'), where('monthId', '==', id)));
+      indSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      // Delete collaborators
+      const colSnap = await getDocs(query(collection(db, 'collaborators'), where('monthId', '==', id)));
+      colSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      // Delete month
+      batch.delete(doc(db, 'months', id));
+      
+      await batch.commit();
+      
+      const remainingMonths = months.filter(m => m.id !== id);
+      setMonths(remainingMonths);
+      if (remainingMonths.length > 0) {
+        setSelectedMonthId(remainingMonths[0].id);
+      } else {
+        await fetchMonths();
+      }
+      setIsEditMonthModalOpen(false);
+    }
   };
 
   const handleSaveValue = async (indicatorId: string, collaboratorId: string, value: string | number) => {
@@ -564,15 +603,24 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <Calendar className="text-gray-400 w-5 h-5" />
-              <select 
-                value={selectedMonthId}
-                onChange={(e) => setSelectedMonthId(e.target.value)}
-                className="bg-transparent font-bold text-gray-900 focus:outline-none cursor-pointer hover:text-[#FF6B00] transition-colors"
-              >
-                {months.map(m => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1 group">
+                <select 
+                  value={selectedMonthId}
+                  onChange={(e) => setSelectedMonthId(e.target.value)}
+                  className="bg-transparent font-bold text-gray-900 focus:outline-none cursor-pointer hover:text-[#FF6B00] transition-colors"
+                >
+                  {months.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                <button 
+                  onClick={() => setIsEditMonthModalOpen(true)}
+                  className="p-1 text-gray-400 hover:text-[#FF6B00] transition-colors"
+                  title="Editar Mês"
+                >
+                  <Edit2 size={14} />
+                </button>
+              </div>
             </div>
             <div className="h-6 w-px bg-gray-100" />
             <div className="flex bg-gray-50 p-1 rounded-lg">
@@ -659,6 +707,17 @@ export default function App() {
           onSubmit={handleCreateMonth} 
           onCancel={() => setIsNewMonthModalOpen(false)} 
         />
+      </Modal>
+
+      <Modal isOpen={isEditMonthModalOpen} onClose={() => setIsEditMonthModalOpen(false)} title="Editar Mês">
+        {selectedMonth && (
+          <EditMonthForm 
+            month={selectedMonth}
+            onSubmit={(name) => handleUpdateMonth(selectedMonth.id, name)}
+            onDelete={() => handleDeleteMonth(selectedMonth.id)}
+            onCancel={() => setIsEditMonthModalOpen(false)}
+          />
+        )}
       </Modal>
 
       <Modal 
@@ -1071,6 +1130,31 @@ function NewMonthForm({ months, onSubmit, onCancel }: { months: Month[], onSubmi
       <div className="flex justify-end gap-3 pt-4">
         <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
         <Button type="submit">Criar Mês</Button>
+      </div>
+    </form>
+  );
+}
+
+function EditMonthForm({ month, onSubmit, onDelete, onCancel }: { month: Month, onSubmit: (name: string) => void, onDelete: () => void, onCancel: () => void }) {
+  const [name, setName] = useState(month.name);
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(name); }} className="space-y-6">
+      <Input 
+        label="Nome do Mês (MM/YYYY)" 
+        value={name} 
+        onChange={(e) => setName(e.target.value)} 
+        required 
+      />
+      <div className="flex justify-between items-center pt-4">
+        <Button variant="danger" type="button" onClick={onDelete} size="sm">
+          <Trash2 size={14} />
+          Excluir Mês
+        </Button>
+        <div className="flex gap-3">
+          <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
+          <Button type="submit">Salvar Alterações</Button>
+        </div>
       </div>
     </form>
   );
