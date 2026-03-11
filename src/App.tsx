@@ -22,11 +22,33 @@ import {
   Image as ImageIcon,
   Copy,
   ChevronLeft,
+  ChevronDown,
   MoreVertical,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Target,
+  BrainCircuit,
+  Award,
+  BarChart3,
+  UserPlus,
+  Heart,
+  MessageSquare,
+  ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  ScatterChart, 
+  Scatter, 
+  XAxis, 
+  YAxis, 
+  ZAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  ReferenceLine,
+  LabelList,
+  Cell
+} from 'recharts';
 import { format, parse, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { db } from './lib/firebase';
@@ -52,7 +74,11 @@ import {
   Collaborator, 
   Indicator, 
   DataValue, 
-  IndicatorType 
+  IndicatorType,
+  DevelopmentEvaluation,
+  DevelopmentClassification,
+  TECHNICAL_QUESTIONS,
+  BEHAVIORAL_QUESTIONS
 } from './types';
 
 // --- Components ---
@@ -93,10 +119,29 @@ const Button = ({
   );
 };
 
-const Card = ({ children, className, title, subtitle, action, noPadding = false, onClick }: { children: React.ReactNode, className?: string, title?: string, subtitle?: string, action?: React.ReactNode, noPadding?: boolean, onClick?: () => void }) => (
+const Card = ({ 
+  children, 
+  className, 
+  title, 
+  subtitle, 
+  action, 
+  noPadding = false, 
+  onClick,
+  style
+}: { 
+  children: React.ReactNode, 
+  className?: string, 
+  title?: string, 
+  subtitle?: string, 
+  action?: React.ReactNode, 
+  noPadding?: boolean, 
+  onClick?: () => void,
+  style?: React.CSSProperties
+}) => (
   <div 
     className={cn('bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden', className)}
     onClick={onClick}
+    style={style}
   >
     {(title || subtitle || action) && (
       <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
@@ -134,16 +179,13 @@ const Select = ({ label, options, ...props }: React.SelectHTMLAttributes<HTMLSel
     <div className="relative">
       <select 
         className={cn(
-          'w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-all appearance-none',
+          'w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-all cursor-pointer',
           props.className
         )}
         {...props}
       >
         {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
       </select>
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-        <ChevronRight className="rotate-90 w-4 h-4" />
-      </div>
     </div>
   </div>
 );
@@ -181,6 +223,7 @@ export default function App() {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [dataValues, setDataValues] = useState<DataValue[]>([]);
+  const [evaluations, setEvaluations] = useState<DevelopmentEvaluation[]>([]);
   
   // Modals state
   const [isNewMonthModalOpen, setIsNewMonthModalOpen] = useState(false);
@@ -193,6 +236,8 @@ export default function App() {
   const [sectorOverrides, setSectorOverrides] = useState<Record<string, Partial<Sector>>>({});
   const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
+  const [isDevelopmentModalOpen, setIsDevelopmentModalOpen] = useState(false);
+  const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator | null>(null);
 
   const activeSector = useMemo(() => {
     const base = SECTORS.find(s => s.id === activeSectorId) || SECTORS[0];
@@ -206,12 +251,18 @@ export default function App() {
     const init = async () => {
       await Promise.all([
         fetchMonths(),
-        fetchSectorOverrides()
+        fetchSectorOverrides(),
+        fetchEvaluations()
       ]);
       setLoading(false);
     };
     init();
   }, []);
+
+  const fetchEvaluations = async () => {
+    const snapshot = await getDocs(collection(db, 'evaluations'));
+    setEvaluations(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DevelopmentEvaluation)));
+  };
 
   const fetchSectorOverrides = async () => {
     const snapshot = await getDocs(collection(db, 'sectorOverrides'));
@@ -573,19 +624,35 @@ export default function App() {
             active={activeSectorId === 'overview'} 
             onClick={() => setActiveSectorId('overview')} 
           />
+          <NavItem 
+            icon={<BrainCircuit size={20} />} 
+            label="Avaliação de Desenv." 
+            active={activeSectorId === 'development'} 
+            onClick={() => setActiveSectorId('development')} 
+          />
           <div className="pt-4 pb-2 px-4">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Setores</p>
           </div>
-          {SECTORS.map(sector => (
-            <div key={sector.id}>
-              <NavItem 
-                icon={<div className="w-2 h-2 rounded-full" style={{ backgroundColor: sector.color }} />} 
-                label={sector.name} 
-                active={activeSectorId === sector.id} 
-                onClick={() => setActiveSectorId(sector.id)} 
-              />
-            </div>
-          ))}
+          {SECTORS.map(sector => {
+            const IconComponent = {
+              Calendar,
+              UserPlus,
+              TrendingUp,
+              Heart,
+              MessageSquare
+            }[sector.icon || ''] || LayoutDashboard;
+
+            return (
+              <div key={sector.id}>
+                <NavItem 
+                  icon={<IconComponent size={18} style={{ color: sector.color }} />} 
+                  label={sector.name} 
+                  active={activeSectorId === sector.id} 
+                  onClick={() => setActiveSectorId(sector.id)} 
+                />
+              </div>
+            );
+          })}
         </nav>
 
         <div className="p-4 mt-auto">
@@ -678,6 +745,26 @@ export default function App() {
                   collaborators={collaborators} 
                   onNavigate={setActiveSectorId}
                 />
+              ) : activeSectorId === 'development' ? (
+                <DevelopmentView 
+                  sectors={SECTORS}
+                  collaborators={collaborators}
+                  evaluations={evaluations}
+                  monthId={selectedMonthId}
+                  onSaveEvaluation={async (evalData) => {
+                    const existing = evaluations.find(e => e.collaboratorId === evalData.collaboratorId && e.monthId === evalData.monthId);
+                    if (existing) {
+                      await updateDoc(doc(db, 'evaluations', existing.id), { ...evalData, updatedAt: serverTimestamp() });
+                    } else {
+                      await addDoc(collection(db, 'evaluations'), { ...evalData, updatedAt: serverTimestamp() });
+                    }
+                    fetchEvaluations();
+                  }}
+                  onDeleteEvaluation={async (id) => {
+                    await deleteDoc(doc(db, 'evaluations', id));
+                    fetchEvaluations();
+                  }}
+                />
               ) : (
                 <SectorDashboard 
                   sector={activeSector}
@@ -685,6 +772,7 @@ export default function App() {
                   indicators={indicators.filter(i => i.sectorId === activeSectorId)}
                   collaborators={collaborators.filter(c => c.sectorId === activeSectorId)}
                   dataValues={dataValues}
+                  evaluations={evaluations}
                   onSaveValue={handleSaveValue}
                   onAddCollaborator={() => setIsCollaboratorModalOpen(true)}
                   onEditCollaborator={(c) => { setEditingCollaborator(c); setIsCollaboratorModalOpen(true); }}
@@ -693,6 +781,10 @@ export default function App() {
                   onEditIndicator={(i) => { setEditingIndicator(i); setIsIndicatorModalOpen(true); }}
                   onDeleteIndicator={handleDeleteIndicator}
                   onEditSector={() => { setEditingSector(activeSector); setIsSectorModalOpen(true); }}
+                  onEvaluateCollaborator={(c) => {
+                    setSelectedCollaborator(c);
+                    setIsDevelopmentModalOpen(true);
+                  }}
                 />
               )}
             </motion.div>
@@ -755,6 +847,382 @@ export default function App() {
           onCancel={() => { setIsSectorModalOpen(false); setEditingSector(null); }}
         />
       </Modal>
+
+      <Modal 
+        isOpen={isDevelopmentModalOpen} 
+        onClose={() => { setIsDevelopmentModalOpen(false); setSelectedCollaborator(null); }} 
+        title={`Avaliação de Desenvolvimento: ${selectedCollaborator?.name}`}
+      >
+        {selectedCollaborator && (
+          <DevelopmentEvaluationForm 
+            collaborator={selectedCollaborator}
+            monthId={selectedMonthId}
+            initialData={evaluations.find(e => e.collaboratorId === selectedCollaborator.id && e.monthId === selectedMonthId)}
+            onSubmit={async (evalData) => {
+              const existing = evaluations.find(e => e.collaboratorId === evalData.collaboratorId && e.monthId === evalData.monthId);
+              if (existing) {
+                await updateDoc(doc(db, 'evaluations', existing.id), { ...evalData, updatedAt: serverTimestamp() });
+              } else {
+                await addDoc(collection(db, 'evaluations'), { ...evalData, updatedAt: serverTimestamp() });
+              }
+              fetchEvaluations();
+              setIsDevelopmentModalOpen(false);
+              setSelectedCollaborator(null);
+            }}
+            onCancel={() => { setIsDevelopmentModalOpen(false); setSelectedCollaborator(null); }}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// --- Development View ---
+
+function DevelopmentView({ 
+  sectors, 
+  collaborators, 
+  evaluations, 
+  monthId,
+  onSaveEvaluation,
+  onDeleteEvaluation
+}: { 
+  sectors: Sector[], 
+  collaborators: Collaborator[], 
+  evaluations: DevelopmentEvaluation[],
+  monthId: string,
+  onSaveEvaluation: (data: Partial<DevelopmentEvaluation>) => Promise<void>,
+  onDeleteEvaluation: (id: string) => Promise<void>
+}) {
+  const [selectedSectorId, setSelectedSectorId] = useState<string>(sectors[0].id);
+  const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
+  const [selectedColab, setSelectedColab] = useState<Collaborator | null>(null);
+
+  const sectorColabs = useMemo(() => 
+    collaborators.filter(c => c.sectorId === selectedSectorId && c.monthId === monthId),
+    [collaborators, selectedSectorId, monthId]
+  );
+
+  const sectorEvals = useMemo(() => 
+    evaluations.filter(e => e.monthId === monthId && sectorColabs.some(c => c.id === e.collaboratorId)),
+    [evaluations, monthId, sectorColabs]
+  );
+
+  const chartData = useMemo(() => {
+    return sectorEvals.map(e => {
+      const colab = sectorColabs.find(c => c.id === e.collaboratorId);
+      return {
+        x: e.technicalAverage,
+        y: e.behavioralAverage,
+        name: colab?.name || 'Desconhecido',
+        classification: e.classification
+      };
+    });
+  }, [sectorEvals, sectorColabs]);
+
+  const getClassificationStyles = (classification: DevelopmentClassification) => {
+    switch (classification) {
+      case 'DELEGAR': return { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', badge: 'bg-green-500' };
+      case 'MOTIVAR': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-500' };
+      case 'GUIAR': return { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', badge: 'bg-yellow-500' };
+      case 'DIRECIONAR': return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', badge: 'bg-red-500' };
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-end justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2">Avaliação de Desenvolvimento</h2>
+          <p className="text-gray-500 font-medium">Matriz de competências e comportamento por colaborador.</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-gray-100 shadow-sm">
+            <ClipboardList size={16} className="text-[#FF6B00]" />
+            <span className="text-sm font-bold text-gray-700">Total no Setor: {sectorEvals.length}</span>
+          </div>
+          <Select 
+            label="Filtrar por Setor"
+            value={selectedSectorId}
+            onChange={(e) => setSelectedSectorId(e.target.value)}
+            options={sectors.map(s => ({ value: s.id, label: s.name }))}
+            className="min-w-[200px]"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {(['DELEGAR', 'MOTIVAR', 'GUIAR', 'DIRECIONAR'] as const).map(cat => {
+          const styles = getClassificationStyles(cat);
+          const catEvals = sectorEvals.filter(e => e.classification === cat);
+          return (
+            <div key={cat} className={cn("border-t-4 rounded-2xl", 
+              cat === 'DELEGAR' ? 'border-t-[#10B981]' :
+              cat === 'MOTIVAR' ? 'border-t-[#3B82F6]' :
+              cat === 'GUIAR' ? 'border-t-[#F59E0B]' : 'border-t-[#EF4444]'
+            )}>
+              <Card className="h-full" title={cat} subtitle={`Total: ${catEvals.length}`}>
+                <div className="space-y-2 mt-4 max-h-[200px] overflow-y-auto pr-1">
+                  {catEvals.length === 0 ? (
+                    <p className="text-[10px] text-gray-400 italic">Nenhum colaborador neste quadrante</p>
+                  ) : (
+                    catEvals.map(e => {
+                      const colab = sectorColabs.find(c => c.id === e.collaboratorId);
+                      return (
+                        <div key={e.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-xl border border-gray-100">
+                          <img 
+                            src={colab?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${colab?.name}`} 
+                            className="w-6 h-6 rounded-lg object-cover"
+                            alt={colab?.name}
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold text-gray-900 truncate">{colab?.name}</p>
+                            <p className="text-[8px] text-gray-500">S: {e.technicalAverage.toFixed(1)} | V: {e.behavioralAverage.toFixed(1)}</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </Card>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {sectorColabs.map(colab => {
+          const evalData = sectorEvals.find(e => e.collaboratorId === colab.id);
+          const styles = evalData ? getClassificationStyles(evalData.classification) : null;
+
+          return (
+            <div 
+              key={colab.id} 
+              className="border-t-4 rounded-2xl"
+              style={{ borderTopColor: styles ? (
+                evalData?.classification === 'DELEGAR' ? '#10B981' :
+                evalData?.classification === 'MOTIVAR' ? '#3B82F6' :
+                evalData?.classification === 'GUIAR' ? '#F59E0B' : '#EF4444'
+              ) : '#f3f4f6' }}
+            >
+              <Card className="group hover:shadow-xl transition-all duration-300 h-full relative">
+                <div className="flex flex-col items-center text-center space-y-4">
+                  {evalData ? (
+                    <div className={cn("px-3 py-1 rounded-full text-[10px] font-black tracking-widest text-white shadow-sm", styles?.badge)}>
+                      {evalData.classification}
+                    </div>
+                  ) : (
+                    <div className="px-3 py-1 rounded-full text-[10px] font-black tracking-widest bg-gray-100 text-gray-400">
+                      PENDENTE
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <img 
+                      src={colab.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${colab.name}`} 
+                      className="w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white"
+                      alt={colab.name}
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-gray-900">{colab.name}</h4>
+                    <p className="text-xs text-gray-500">Meta: {colab.meta || '-'}</p>
+                    {evalData && <p className="text-[10px] text-gray-400 mt-1">Avaliado em: {format(new Date(evalData.evaluationDate), 'dd/MM/yyyy')}</p>}
+                  </div>
+
+                  {evalData && (
+                    <div className="grid grid-cols-2 gap-4 w-full pt-2">
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">Skill</p>
+                        <p className="text-sm font-black text-gray-700">{evalData.technicalAverage.toFixed(1)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">Vontade</p>
+                        <p className="text-sm font-black text-gray-700">{evalData.behavioralAverage.toFixed(1)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 w-full">
+                    <Button 
+                      variant={evalData ? "outline" : "primary"} 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => {
+                        setSelectedColab(colab);
+                        setIsEvalModalOpen(true);
+                      }}
+                    >
+                      {evalData ? "Editar" : "Avaliar"}
+                    </Button>
+                    {evalData && (
+                      <Button 
+                        variant="danger" 
+                        size="sm" 
+                        className="px-3"
+                        onClick={() => onDeleteEvaluation(evalData.id)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </div>
+          );
+        })}
+      </div>
+
+      <Modal 
+        isOpen={isEvalModalOpen} 
+        onClose={() => { setIsEvalModalOpen(false); setSelectedColab(null); }} 
+        title={`Avaliação: ${selectedColab?.name}`}
+      >
+        {selectedColab && (
+          <DevelopmentEvaluationForm 
+            collaborator={selectedColab}
+            monthId={monthId}
+            initialData={sectorEvals.find(e => e.collaboratorId === selectedColab.id)}
+            onSubmit={async (data) => {
+              await onSaveEvaluation(data);
+              setIsEvalModalOpen(false);
+              setSelectedColab(null);
+            }}
+            onCancel={() => { setIsEvalModalOpen(false); setSelectedColab(null); }}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function DevelopmentEvaluationForm({ 
+  collaborator, 
+  monthId, 
+  initialData, 
+  onSubmit, 
+  onCancel 
+}: { 
+  collaborator: Collaborator, 
+  monthId: string, 
+  initialData?: DevelopmentEvaluation,
+  onSubmit: (data: Partial<DevelopmentEvaluation>) => Promise<void>,
+  onCancel: () => void
+}) {
+  const [evaluationDate, setEvaluationDate] = useState(initialData?.evaluationDate || format(new Date(), 'yyyy-MM-dd'));
+  const [techScores, setTechScores] = useState<Record<string, number>>(initialData?.technicalScores || {});
+  const [behaveScores, setBehaveScores] = useState<Record<string, number>>(initialData?.behavioralScores || {});
+  const [step, setStep] = useState<'date' | 'tech' | 'behave'>('date');
+
+  const calculateAverages = () => {
+    const techVals = Object.values(techScores) as number[];
+    const behaveVals = Object.values(behaveScores) as number[];
+    
+    const techAvg = techVals.length > 0 ? techVals.reduce((a: number, b: number) => a + b, 0) / TECHNICAL_QUESTIONS.length : 0;
+    const behaveAvg = behaveVals.length > 0 ? behaveVals.reduce((a: number, b: number) => a + b, 0) / BEHAVIORAL_QUESTIONS.length : 0;
+    
+    let classification: DevelopmentClassification = 'DIRECIONAR';
+    if (techAvg <= 2.5 && behaveAvg <= 2.5) classification = 'DIRECIONAR';
+    else if (techAvg <= 2.5 && behaveAvg > 2.5) classification = 'GUIAR';
+    else if (techAvg > 2.5 && behaveAvg <= 2.5) classification = 'MOTIVAR';
+    else if (techAvg > 2.5 && behaveAvg > 2.5) classification = 'DELEGAR';
+
+    return { techAvg, behaveAvg, classification };
+  };
+
+  const isStepComplete = step === 'date' ? !!evaluationDate : (step === 'tech' 
+    ? Object.keys(techScores).length === TECHNICAL_QUESTIONS.length 
+    : Object.keys(behaveScores).length === BEHAVIORAL_QUESTIONS.length);
+
+  return (
+    <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+      <div className="flex items-center gap-2 mb-4">
+        <div className={cn("flex-1 h-2 rounded-full", step === 'date' ? "bg-[#FF6B00]" : "bg-gray-200")} />
+        <div className={cn("flex-1 h-2 rounded-full", step === 'tech' ? "bg-[#FF6B00]" : "bg-gray-200")} />
+        <div className={cn("flex-1 h-2 rounded-full", step === 'behave' ? "bg-[#FF6B00]" : "bg-gray-200")} />
+      </div>
+
+      <div className="space-y-4">
+        {step === 'date' && (
+          <div className="space-y-6">
+            <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+              <p className="text-sm text-[#FF6B00] font-medium">Inicie a avaliação definindo a data do registro.</p>
+            </div>
+            <Input 
+              label="Data da Avaliação" 
+              type="date" 
+              value={evaluationDate} 
+              onChange={(e) => setEvaluationDate(e.target.value)} 
+            />
+          </div>
+        )}
+
+        {step !== 'date' && (
+          <>
+            <h4 className="font-bold text-gray-900 flex items-center gap-2">
+              {step === 'tech' ? <Target className="text-[#FF6B00]" /> : <Users className="text-[#FF6B00]" />}
+              {step === 'tech' ? 'Skill Técnico' : 'Vontade Comportamental'}
+            </h4>
+            
+            {(step === 'tech' ? TECHNICAL_QUESTIONS : BEHAVIORAL_QUESTIONS).map((q, idx) => (
+              <div key={q} className="p-4 bg-gray-50 rounded-2xl space-y-3">
+                <p className="text-sm font-medium text-gray-700">{q}</p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4].map(score => (
+                    <button
+                      key={score}
+                      type="button"
+                      onClick={() => {
+                        if (step === 'tech') setTechScores({ ...techScores, [q]: score });
+                        else setBehaveScores({ ...behaveScores, [q]: score });
+                      }}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-xs font-bold transition-all",
+                        (step === 'tech' ? techScores[q] : behaveScores[q]) === score
+                          ? "bg-[#FF6B00] text-white shadow-lg shadow-orange-200"
+                          : "bg-white text-gray-400 border border-gray-100 hover:border-orange-200"
+                      )}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      <div className="flex justify-between pt-4 sticky bottom-0 bg-white pb-2">
+        <Button variant="outline" onClick={step === 'date' ? onCancel : (step === 'tech' ? () => setStep('date') : () => setStep('tech'))}>
+          {step === 'date' ? 'Cancelar' : 'Voltar'}
+        </Button>
+        <Button 
+          disabled={!isStepComplete}
+          onClick={async () => {
+            if (step === 'date') setStep('tech');
+            else if (step === 'tech') setStep('behave');
+            else {
+              const { techAvg, behaveAvg, classification } = calculateAverages();
+              await onSubmit({
+                monthId,
+                collaboratorId: collaborator.id,
+                evaluationDate,
+                technicalScores: techScores,
+                behavioralScores: behaveScores,
+                technicalAverage: techAvg,
+                behavioralAverage: behaveAvg,
+                classification
+              });
+            }
+          }}
+        >
+          {step === 'behave' ? 'Finalizar Avaliação' : 'Próximo'}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -787,6 +1255,7 @@ function SectorDashboard({
   indicators, 
   collaborators, 
   dataValues, 
+  evaluations,
   onSaveValue,
   onAddCollaborator,
   onEditCollaborator,
@@ -794,13 +1263,15 @@ function SectorDashboard({
   onAddIndicator,
   onEditIndicator,
   onDeleteIndicator,
-  onEditSector
+  onEditSector,
+  onEvaluateCollaborator
 }: { 
   sector: Sector, 
   monthId: string,
   indicators: Indicator[], 
   collaborators: Collaborator[], 
   dataValues: DataValue[],
+  evaluations: DevelopmentEvaluation[],
   onSaveValue: (indId: string, colId: string, val: string | number) => void,
   onAddCollaborator: () => void,
   onEditCollaborator: (c: Collaborator) => void,
@@ -808,7 +1279,8 @@ function SectorDashboard({
   onAddIndicator: () => void,
   onEditIndicator: (i: Indicator) => void,
   onDeleteIndicator: (id: string) => void,
-  onEditSector: () => void
+  onEditSector: () => void,
+  onEvaluateCollaborator: (c: Collaborator) => void
 }) {
   const formatValue = (val: any, type: IndicatorType) => {
     if (val === '-' || val === undefined || val === null || val === '') return '-';
@@ -867,30 +1339,64 @@ function SectorDashboard({
                     <th className="p-6 text-left border-r border-white/10 min-w-[240px]">
                       <span className="text-xs font-black uppercase tracking-widest opacity-80">Indicador</span>
                     </th>
-                    {collaborators.map(c => (
-                      <th key={c.id} className="p-6 border-r border-white/10 min-w-[140px] group relative">
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="relative">
-                            <img 
-                              src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
-                              alt={c.name} 
-                              className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-white/10 object-cover shadow-lg"
-                              referrerPolicy="no-referrer"
-                            />
-                            <button 
-                              onClick={() => onEditCollaborator(c)}
-                              className="absolute -top-1 -right-1 bg-white text-gray-900 p-1.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <Edit2 size={10} />
-                            </button>
+                    {collaborators.map(c => {
+                      const evalData = evaluations.find(e => e.collaboratorId === c.id && e.monthId === monthId);
+                      const getBadgeColor = (cls?: DevelopmentClassification) => {
+                        switch (cls) {
+                          case 'DELEGAR': return 'bg-[#10B981]'; // Verde vibrante
+                          case 'MOTIVAR': return 'bg-[#3B82F6]'; // Azul vibrante
+                          case 'GUIAR': return 'bg-[#F59E0B]';   // Amarelo vibrante
+                          case 'DIRECIONAR': return 'bg-[#EF4444]'; // Vermelho vibrante
+                          default: return 'bg-gray-400';
+                        }
+                      };
+
+                      return (
+                        <th key={c.id} className="p-6 border-r border-white/10 min-w-[160px] group relative">
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="relative">
+                              <img 
+                                src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
+                                alt={c.name} 
+                                className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-white/10 object-cover shadow-lg"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="flex gap-1 absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => onEvaluateCollaborator(c)}
+                                  className="bg-[#FF6B00] text-white p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                  title="Lançar Avaliação"
+                                >
+                                  <BrainCircuit size={10} />
+                                </button>
+                                <button 
+                                  onClick={() => onEditCollaborator(c)}
+                                  className="bg-white text-gray-900 p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                  title="Editar Colaborador"
+                                >
+                                  <Edit2 size={10} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="text-center relative flex flex-col items-center">
+                              <span className="text-[10px] font-black uppercase tracking-tighter block leading-none mb-1">{c.name}</span>
+                              <div className="flex flex-col items-center">
+                                {c.meta && <span className="text-[9px] font-bold opacity-60">META: {c.meta}</span>}
+                                
+                                {evalData && (
+                                  <div className={cn(
+                                    "mt-1 px-2 py-0.5 rounded-md text-[8px] font-black text-white shadow-sm uppercase tracking-wider",
+                                    getBadgeColor(evalData.classification)
+                                  )}>
+                                    {evalData.classification}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-center">
-                            <span className="text-[10px] font-black uppercase tracking-tighter block leading-none mb-1">{c.name}</span>
-                            {c.meta && <span className="text-[9px] font-bold opacity-60">META: {c.meta}</span>}
-                          </div>
-                        </div>
-                      </th>
-                    ))}
+                        </th>
+                      );
+                    })}
                     <th className="p-6 bg-[#E66000] min-w-[140px]">
                       <div className="flex flex-col items-center gap-2">
                         <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
@@ -1028,23 +1534,6 @@ function SectorDashboard({
             {/* Decorative elements */}
             <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
             <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-          </Card>
-
-          <Card title="Resumo do Setor" subtitle="Métricas consolidadas do mês">
-            <div className="space-y-4 mt-4">
-               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
-                  <span className="text-xs font-bold text-gray-500 uppercase">Colaboradores</span>
-                  <span className="text-lg font-black text-gray-900">{collaborators.length}</span>
-               </div>
-               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
-                  <span className="text-xs font-bold text-gray-500 uppercase">Indicadores</span>
-                  <span className="text-lg font-black text-gray-900">{indicators.length}</span>
-               </div>
-               <div className="flex items-center justify-between p-4 bg-orange-50 rounded-2xl">
-                  <span className="text-xs font-bold text-[#FF6B00] uppercase">Performance Geral</span>
-                  <span className="text-lg font-black text-[#FF6B00]">84%</span>
-               </div>
-            </div>
           </Card>
         </div>
       </div>
