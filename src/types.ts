@@ -1,4 +1,4 @@
-export type IndicatorType = 'number' | 'percentage' | 'currency';
+export type IndicatorType = 'number' | 'percentage' | 'currency' | 'time';
 
 export interface Sector {
   id: string;

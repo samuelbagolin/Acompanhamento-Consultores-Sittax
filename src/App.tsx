@@ -81,6 +81,28 @@ import {
   BEHAVIORAL_QUESTIONS
 } from './types';
 
+// --- Helpers ---
+
+const formatValue = (val: any, type: IndicatorType) => {
+  if (val === '-' || val === undefined || val === null || val === '') return '-';
+  
+  if (type === 'time') {
+    const num = Number(val);
+    if (isNaN(num)) return val;
+    const h = Math.floor(num / 3600);
+    const m = Math.floor((num % 3600) / 60);
+    const s = Math.floor(num % 60);
+    return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+  }
+
+  const num = Number(val);
+  if (isNaN(num)) return val;
+  
+  if (type === 'percentage') return `${num}%`;
+  if (type === 'currency') return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return num.toLocaleString('pt-BR');
+};
+
 // --- Components ---
 
 const Button = ({ 
@@ -235,6 +257,7 @@ export default function App() {
 
   const [sectorOverrides, setSectorOverrides] = useState<Record<string, Partial<Sector>>>({});
   const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
+  const [devSelectedSectorId, setDevSelectedSectorId] = useState<string>(SECTORS[0].id);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
   const [isDevelopmentModalOpen, setIsDevelopmentModalOpen] = useState(false);
   const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator | null>(null);
@@ -467,16 +490,28 @@ export default function App() {
   };
 
   const handleSaveValue = async (indicatorId: string, collaboratorId: string, value: string | number) => {
+    const indicator = indicators.find(i => i.id === indicatorId);
+    let finalValue = value;
+    
+    if (indicator?.type === 'time' && typeof value === 'string' && value.includes(':')) {
+      const parts = value.split(':').reverse();
+      let seconds = 0;
+      if (parts[0]) seconds += parseInt(parts[0], 10) || 0;
+      if (parts[1]) seconds += (parseInt(parts[1], 10) || 0) * 60;
+      if (parts[2]) seconds += (parseInt(parts[2], 10) || 0) * 3600;
+      finalValue = seconds;
+    }
+
     const existing = dataValues.find(v => v.indicatorId === indicatorId && v.collaboratorId === collaboratorId && v.monthId === selectedMonthId);
     
     if (existing) {
-      await updateDoc(doc(db, 'dataValues', existing.id), { value });
+      await updateDoc(doc(db, 'dataValues', existing.id), { value: finalValue });
     } else {
       await addDoc(collection(db, 'dataValues'), {
         monthId: selectedMonthId,
         indicatorId,
         collaboratorId,
-        value
+        value: finalValue
       });
     }
     fetchMonthData(selectedMonthId);
@@ -558,30 +593,94 @@ export default function App() {
   const handleExport = () => {
     if (!selectedMonth) return;
     
+    if (activeSectorId === 'development') {
+      // Export evaluations
+      const headers = ['Colaborador', 'Setor', 'Data Avaliação', 'Skill Técnico', 'Vontade Comportamental', 'Classificação'];
+      const rows = evaluations
+        .filter(e => {
+          const collab = collaborators.find(c => c.id === e.collaboratorId);
+          return e.monthId === selectedMonthId && (devSelectedSectorId === 'all' || collab?.sectorId === devSelectedSectorId);
+        })
+        .map(e => {
+          const collab = collaborators.find(c => c.id === e.collaboratorId);
+          const s = SECTORS.find(s => s.id === collab?.sectorId);
+          return [
+            collab?.name || '-',
+            s?.name || '-',
+            e.evaluationDate || '-',
+            e.technicalAverage.toFixed(2).replace('.', ','),
+            e.behavioralAverage.toFixed(2).replace('.', ','),
+            e.classification
+          ];
+        });
+
+      const csvContent = [
+        headers.join(';'),
+        ...rows.map(r => r.join(';'))
+      ].join('\n');
+
+      const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `sittax_avaliacoes_${selectedMonth.name.replace('/', '-')}.csv`;
+      link.click();
+      return;
+    }
+
+    // Matrix export for specific sector
+    if (activeSectorId !== 'overview') {
+      const sector = SECTORS.find(s => s.id === activeSectorId);
+      const sectorIndicators = indicators.filter(i => i.sectorId === activeSectorId);
+      const sectorCollaborators = collaborators.filter(c => c.sectorId === activeSectorId);
+      
+      const headers = ['Indicador', ...sectorCollaborators.map(c => c.name), 'Total Setor'];
+      const rows = sectorIndicators.map(ind => {
+        const colValues = sectorCollaborators.map(c => {
+          const val = dataValues.find(dv => dv.indicatorId === ind.id && dv.collaboratorId === c.id)?.value;
+          return formatValue(val, ind.type);
+        });
+        const sectorVal = dataValues.find(dv => dv.indicatorId === ind.id && dv.collaboratorId === 'sector')?.value;
+        return [ind.name, ...colValues, sectorVal !== undefined ? formatValue(sectorVal, ind.type) : '-'];
+      });
+
+      const csvContent = [
+        headers.join(';'),
+        ...rows.map(r => r.join(';'))
+      ].join('\n');
+
+      const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `sittax_${sector?.name.toLowerCase() || 'performance'}_${selectedMonth.name.replace('/', '-')}.csv`;
+      link.click();
+      return;
+    }
+
+    // Standard performance export for Overview
     const headers = ['Setor', 'Indicador', 'Colaborador', 'Valor'];
     const rows = dataValues
       .filter(v => v.monthId === selectedMonthId)
       .map(v => {
-        const sector = SECTORS.find(s => s.id === (collaborators.find(c => c.id === v.collaboratorId)?.sectorId || indicators.find(i => i.id === v.indicatorId)?.sectorId));
         const indicator = indicators.find(i => i.id === v.indicatorId);
         const collaborator = collaborators.find(c => c.id === v.collaboratorId);
+        const sector = SECTORS.find(s => s.id === (collaborator?.sectorId || indicator?.sectorId));
         return [
           sector?.name || '-',
           indicator?.name || '-',
           collaborator?.name || 'Setor',
-          v.value
+          formatValue(v.value, indicator?.type || 'number')
         ];
       });
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(r => r.join(','))
+      headers.join(';'),
+      ...rows.map(r => r.join(';'))
     ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `sittax_performance_${selectedMonth.name.replace('/', '-')}.csv`;
+    link.download = `sittax_geral_${selectedMonth.name.replace('/', '-')}.csv`;
     link.click();
   };
 
@@ -762,6 +861,8 @@ export default function App() {
                   collaborators={collaborators}
                   evaluations={evaluations}
                   monthId={selectedMonthId}
+                  selectedSectorId={devSelectedSectorId}
+                  onSectorChange={setDevSelectedSectorId}
                   onSaveEvaluation={async (evalData) => {
                     const existing = evaluations.find(e => e.collaboratorId === evalData.collaboratorId && e.monthId === evalData.monthId);
                     if (existing) {
@@ -895,6 +996,8 @@ function DevelopmentView({
   collaborators, 
   evaluations, 
   monthId,
+  selectedSectorId,
+  onSectorChange,
   onSaveEvaluation,
   onDeleteEvaluation
 }: { 
@@ -902,15 +1005,16 @@ function DevelopmentView({
   collaborators: Collaborator[], 
   evaluations: DevelopmentEvaluation[],
   monthId: string,
+  selectedSectorId: string,
+  onSectorChange: (id: string) => void,
   onSaveEvaluation: (data: Partial<DevelopmentEvaluation>) => Promise<void>,
   onDeleteEvaluation: (id: string) => Promise<void>
 }) {
-  const [selectedSectorId, setSelectedSectorId] = useState<string>(sectors[0].id);
   const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
   const [selectedColab, setSelectedColab] = useState<Collaborator | null>(null);
 
   const sectorColabs = useMemo(() => 
-    collaborators.filter(c => c.sectorId === selectedSectorId && c.monthId === monthId),
+    collaborators.filter(c => (selectedSectorId === 'all' || c.sectorId === selectedSectorId) && c.monthId === monthId),
     [collaborators, selectedSectorId, monthId]
   );
 
@@ -944,7 +1048,7 @@ function DevelopmentView({
     <div className="space-y-8">
       <div className="flex items-end justify-between">
         <div>
-          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2">Avaliação de Desenvolvimento</h2>
+          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2">Avaliação</h2>
           <p className="text-gray-500 font-medium">Matriz de competências e comportamento por colaborador.</p>
         </div>
         <div className="flex items-center gap-4">
@@ -955,8 +1059,11 @@ function DevelopmentView({
           <Select 
             label="Filtrar por Setor"
             value={selectedSectorId}
-            onChange={(e) => setSelectedSectorId(e.target.value)}
-            options={sectors.map(s => ({ value: s.id, label: s.name }))}
+            onChange={(e) => onSectorChange(e.target.value)}
+            options={[
+              { value: 'all', label: 'Todos os Setores' },
+              ...sectors.map(s => ({ value: s.id, label: s.name }))
+            ]}
             className="min-w-[200px]"
           />
         </div>
@@ -1293,16 +1400,6 @@ function SectorDashboard({
   onEditSector: () => void,
   onEvaluateCollaborator: (c: Collaborator) => void
 }) {
-  const formatValue = (val: any, type: IndicatorType) => {
-    if (val === '-' || val === undefined || val === null || val === '') return '-';
-    const num = Number(val);
-    if (isNaN(num)) return val;
-    
-    if (type === 'percentage') return `${num}%`;
-    if (type === 'currency') return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    return num.toLocaleString('pt-BR');
-  };
-
   const getRowTotal = (indicator: Indicator) => {
     const values = collaborators.map(c => {
       const v = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === c.id)?.value;
@@ -1459,7 +1556,7 @@ function SectorDashboard({
                                   isNegative && Number(val) > 0 ? "text-red-600" : 
                                   isMetaMet ? "text-[#FF6B00]" : "text-gray-600"
                                 )}
-                                defaultValue={val || ''}
+                                defaultValue={formatValue(val, indicator.type)}
                                 onBlur={(e) => onSaveValue(indicator.id, c.id, e.target.value)}
                                 placeholder="-"
                               />
@@ -1751,6 +1848,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel }: { initialData?: Indi
           { value: 'number', label: 'Numérico' },
           { value: 'percentage', label: 'Percentual (%)' },
           { value: 'currency', label: 'Valor em R$' },
+          { value: 'time', label: 'Tempo (hh:mm:ss)' },
         ]}
       />
       <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
