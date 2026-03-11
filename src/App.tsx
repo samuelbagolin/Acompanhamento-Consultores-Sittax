@@ -284,6 +284,17 @@ export default function App() {
     const snapshot = await getDocs(q);
     const monthsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Month));
     
+    // Sort months chronologically (newest first)
+    const sortedMonths = monthsData.sort((a, b) => {
+      try {
+        const dateA = parse(a.name, 'MM/yyyy', new Date());
+        const dateB = parse(b.name, 'MM/yyyy', new Date());
+        return dateB.getTime() - dateA.getTime();
+      } catch (e) {
+        return 0;
+      }
+    });
+
     if (monthsData.length === 0) {
       // Create initial month if none exists
       const initialMonthName = format(new Date(), 'MM/yyyy');
@@ -296,8 +307,8 @@ export default function App() {
       setSelectedMonthId(docRef.id);
       await seedOnboardingData(docRef.id);
     } else {
-      setMonths(monthsData);
-      setSelectedMonthId(monthsData[0].id);
+      setMonths(sortedMonths);
+      setSelectedMonthId(sortedMonths[0].id);
     }
   };
 
@@ -626,7 +637,7 @@ export default function App() {
           />
           <NavItem 
             icon={<BrainCircuit size={20} />} 
-            label="Avaliação de Desenv." 
+            label="Avaliação" 
             active={activeSectorId === 'development'} 
             onClick={() => setActiveSectorId('development')} 
           />
@@ -1503,38 +1514,44 @@ function SectorDashboard({
 
         <div className="flex flex-col gap-8 sticky top-24 self-start h-fit">
           {/* Brasão do Time */}
-          <Card 
-            className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-[#FF6B00] border-none relative overflow-hidden group cursor-pointer"
+          <div 
+            className="flex-1 flex flex-col items-center justify-center text-center group cursor-pointer relative"
             onClick={onEditSector}
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
-            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-              <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
+            <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+              <Button variant="ghost" size="sm" className="text-gray-400 hover:bg-gray-100">
                 <Edit2 size={14} />
               </Button>
             </div>
-            <div className="relative z-10 space-y-8 w-full flex flex-col items-center">
-              <div className="w-full max-w-[320px] aspect-square flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
-                <div className="w-full h-full flex items-center justify-center">
-                   {sector.logoUrl ? (
-                     <img src={sector.logoUrl} alt={sector.name} className="w-full h-full object-contain drop-shadow-2xl" referrerPolicy="no-referrer" />
-                   ) : (
-                     <div className="text-center p-8 bg-white/10 rounded-[2rem] border border-white/20 backdrop-blur-sm">
-                       <p className="text-white font-black text-4xl leading-none tracking-tighter mb-1">{sector.name.toUpperCase()}</p>
-                       <p className="text-white font-bold text-xl leading-none tracking-widest opacity-60">SITTAX</p>
-                     </div>
-                   )}
-                </div>
-              </div>
-              <div>
-                <h3 className="text-white font-black text-3xl uppercase tracking-widest mb-2">{sector.name}</h3>
-                <div className="w-16 h-1.5 bg-white mx-auto rounded-full" />
-              </div>
-            </div>
-            {/* Decorative elements */}
-            <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-            <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-          </Card>
+            <motion.div 
+              className="relative z-10 w-full flex flex-col items-center"
+              animate={{
+                y: [0, -15, 0],
+              }}
+              transition={{
+                duration: 4,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            >
+               {sector.logoUrl ? (
+                 <div className="relative group">
+                   <div className="absolute inset-0 bg-black/20 blur-2xl rounded-full scale-75 opacity-50 group-hover:opacity-70 transition-opacity" />
+                   <img 
+                     src={sector.logoUrl} 
+                     alt={sector.name} 
+                     className="max-w-full h-auto drop-shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative z-10" 
+                     referrerPolicy="no-referrer" 
+                   />
+                 </div>
+               ) : (
+                 <div className="text-center p-8 bg-gray-50 rounded-[2rem] border border-gray-200 backdrop-blur-sm shadow-xl">
+                   <p className="text-gray-900 font-black text-4xl leading-none tracking-tighter mb-1">{sector.name.toUpperCase()}</p>
+                   <p className="text-gray-400 font-bold text-xl leading-none tracking-widest opacity-60">SITTAX</p>
+                 </div>
+               )}
+            </motion.div>
+          </div>
         </div>
       </div>
     </div>
