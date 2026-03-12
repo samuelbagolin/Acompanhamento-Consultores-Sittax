@@ -76,6 +76,7 @@ import {
   Collaborator, 
   Indicator, 
   DataValue, 
+  OperationDate,
   IndicatorType,
   SectorHighlight,
   DevelopmentEvaluation,
@@ -243,6 +244,7 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose:
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeSectorId, setActiveSectorId] = useState<string>('onboarding');
+  const [activeOperation, setActiveOperation] = useState<'sittax' | 'openix'>('sittax');
   const [months, setMonths] = useState<Month[]>([]);
   const [selectedMonthId, setSelectedMonthId] = useState<string>('');
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -251,6 +253,9 @@ export default function App() {
   const [evaluations, setEvaluations] = useState<DevelopmentEvaluation[]>([]);
   const [sectorHighlights, setSectorHighlights] = useState<SectorHighlight[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSetoresExpanded, setIsSetoresExpanded] = useState(true);
+  const [isGeneralExpanded, setIsGeneralExpanded] = useState(false);
+  const [operationDates, setOperationDates] = useState<OperationDate[]>([]);
 
   useEffect(() => {
     if (window.innerWidth > 1024) {
@@ -287,12 +292,18 @@ export default function App() {
         fetchMonths(),
         fetchSectorOverrides(),
         fetchEvaluations(),
-        fetchSectorHighlights()
+        fetchSectorHighlights(),
+        fetchOperationDates()
       ]);
       setLoading(false);
     };
     init();
   }, []);
+
+  const fetchOperationDates = async () => {
+    const snapshot = await getDocs(collection(db, 'operationDates'));
+    setOperationDates(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as OperationDate)));
+  };
 
   const fetchEvaluations = async () => {
     const snapshot = await getDocs(collection(db, 'evaluations'));
@@ -508,7 +519,7 @@ export default function App() {
     }
   };
 
-  const handleSaveValue = async (indicatorId: string, collaboratorId: string, value: string | number) => {
+  const handleSaveValue = async (indicatorId: string, collaboratorId: string, value: string | number, date?: string) => {
     const indicator = indicators.find(i => i.id === indicatorId);
     let finalValue = value;
     
@@ -521,7 +532,13 @@ export default function App() {
       finalValue = seconds;
     }
 
-    const existing = dataValues.find(v => v.indicatorId === indicatorId && v.collaboratorId === collaboratorId && v.monthId === selectedMonthId);
+    const existing = dataValues.find(v => 
+      v.indicatorId === indicatorId && 
+      v.collaboratorId === collaboratorId && 
+      v.monthId === selectedMonthId &&
+      (v.operation || 'sittax') === activeOperation &&
+      (date ? v.date === date : !v.date)
+    );
     
     if (existing) {
       await updateDoc(doc(db, 'dataValues', existing.id), { value: finalValue });
@@ -530,10 +547,35 @@ export default function App() {
         indicatorId,
         collaboratorId,
         monthId: selectedMonthId,
-        value: finalValue
+        value: finalValue,
+        operation: activeOperation,
+        date: date || null
       });
     }
     fetchMonthData(selectedMonthId);
+  };
+
+  const handleAddDate = async (date: string) => {
+    if (!selectedMonthId) return;
+    try {
+      await addDoc(collection(db, 'operationDates'), {
+        monthId: selectedMonthId,
+        operation: activeOperation,
+        date
+      });
+      fetchOperationDates();
+    } catch (error) {
+      console.error('Error adding date:', error);
+    }
+  };
+
+  const handleDeleteDate = async (dateId: string) => {
+    try {
+      await deleteDoc(doc(db, 'operationDates', dateId));
+      fetchOperationDates();
+    } catch (error) {
+      console.error('Error deleting date:', error);
+    }
   };
 
   const handleToggleHighlight = async (sectorId: string, monthId: string, collaboratorId: string) => {
@@ -784,7 +826,7 @@ export default function App() {
           </button>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1">
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
           <NavItem 
             icon={<LayoutDashboard size={20} />} 
             label="Visão Geral" 
@@ -803,32 +845,104 @@ export default function App() {
               if (window.innerWidth < 1024) setIsSidebarOpen(false); 
             }} 
           />
-          <div className="pt-4 pb-2 px-4">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Setores</p>
-          </div>
-          {SECTORS.map(sector => {
-            const IconComponent = {
-              Calendar,
-              UserPlus,
-              TrendingUp,
-              Heart,
-              MessageSquare
-            }[sector.icon || ''] || LayoutDashboard;
-
-            return (
-              <div key={sector.id}>
-                <NavItem 
-                  icon={<IconComponent size={18} style={{ color: sector.color }} />} 
-                  label={sector.name} 
-                  active={activeSectorId === sector.id} 
-                  onClick={() => { 
-                    setActiveSectorId(sector.id); 
-                    if (window.innerWidth < 1024) setIsSidebarOpen(false); 
-                  }} 
-                />
+          
+          {/* Indicador Geral Expandable */}
+          <div>
+            <button 
+              onClick={() => setIsGeneralExpanded(!isGeneralExpanded)}
+              className={cn(
+                "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group",
+                activeSectorId.startsWith('general') ? "bg-orange-50 text-[#FF6B00]" : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <BarChart3 size={20} />
+                <span className="font-bold text-sm">Indicador Geral</span>
               </div>
-            );
-          })}
+              <ChevronDown size={16} className={cn("transition-transform", isGeneralExpanded && "rotate-180")} />
+            </button>
+            <AnimatePresence>
+              {isGeneralExpanded && (
+                <motion.div 
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden ml-4 mt-1 space-y-1"
+                >
+                  <button 
+                    onClick={() => {
+                      setActiveSectorId('general-sittax');
+                      setActiveOperation('sittax');
+                      if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                      activeSectorId === 'general-sittax' ? "text-[#FF6B00] bg-orange-50/50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    Sittax
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setActiveSectorId('general-openix');
+                      setActiveOperation('openix');
+                      if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                      activeSectorId === 'general-openix' ? "text-[#FF6B00] bg-orange-50/50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    Openix
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Setores Expandable */}
+          <div>
+            <button 
+              onClick={() => setIsSetoresExpanded(!isSetoresExpanded)}
+              className="w-full flex items-center justify-between px-4 py-3 text-gray-400 hover:text-gray-600 transition-all mt-4"
+            >
+              <p className="text-[10px] font-bold uppercase tracking-widest">Setores</p>
+              <ChevronDown size={14} className={cn("transition-transform", isSetoresExpanded && "rotate-180")} />
+            </button>
+            <AnimatePresence>
+              {isSetoresExpanded && (
+                <motion.div 
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden space-y-1 mt-1"
+                >
+                  {SECTORS.map(sector => {
+                    const IconComponent = {
+                      Calendar,
+                      UserPlus,
+                      TrendingUp,
+                      Heart,
+                      MessageSquare
+                    }[sector.icon || ''] || LayoutDashboard;
+
+                    return (
+                      <NavItem 
+                        key={sector.id}
+                        icon={<IconComponent size={18} style={{ color: sector.color }} />} 
+                        label={sector.name} 
+                        active={activeSectorId === sector.id} 
+                        onClick={() => { 
+                          setActiveSectorId(sector.id); 
+                          if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+                        }} 
+                      />
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </nav>
 
         <div className="p-4 mt-auto">
@@ -954,9 +1068,21 @@ export default function App() {
                     fetchEvaluations();
                   }}
                 />
+              ) : activeSectorId.startsWith('general') ? (
+                <GeneralIndicatorView 
+                  indicators={indicators}
+                  dataValues={dataValues}
+                  monthId={selectedMonthId}
+                  operation={activeOperation}
+                  operationDates={operationDates}
+                  onSaveValue={handleSaveValue}
+                  onAddDate={handleAddDate}
+                  onDeleteDate={handleDeleteDate}
+                />
               ) : (
                 <SectorDashboard 
                   sector={activeSector}
+                  activeOperation={activeOperation}
                   monthId={selectedMonthId}
                   indicators={indicators.filter(i => i.sectorId === activeSectorId)}
                   collaborators={collaborators.filter(c => c.sectorId === activeSectorId)}
@@ -1426,7 +1552,7 @@ function DevelopmentEvaluationForm({
 
 // --- Sub-Views ---
 
-function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
+function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, key?: string }) {
   return (
     <button
       onClick={onClick}
@@ -1448,6 +1574,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, labe
 
 function SectorDashboard({ 
   sector, 
+  activeOperation,
   monthId, 
   indicators, 
   collaborators, 
@@ -1466,6 +1593,7 @@ function SectorDashboard({
   onEvaluateCollaborator
 }: { 
   sector: Sector, 
+  activeOperation: 'sittax' | 'openix',
   monthId: string,
   indicators: Indicator[], 
   collaborators: Collaborator[], 
@@ -1485,7 +1613,11 @@ function SectorDashboard({
 }) {
   const getRowTotal = (indicator: Indicator) => {
     const values = collaborators.map(c => {
-      const v = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === c.id)?.value;
+      const v = dataValues.find(dv => 
+        dv.indicatorId === indicator.id && 
+        dv.collaboratorId === c.id && 
+        (dv.operation || 'sittax') === activeOperation
+      )?.value;
       if (v === undefined || v === '-' || v === '') return 0;
       const num = parseFloat(String(v).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
       return isNaN(num) ? 0 : num;
@@ -1656,7 +1788,11 @@ function SectorDashboard({
                           </div>
                         </td>
                         {collaborators.map(c => {
-                          const val = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === c.id)?.value;
+                          const val = dataValues.find(dv => 
+                            dv.indicatorId === indicator.id && 
+                            dv.collaboratorId === c.id &&
+                            (dv.operation || 'sittax') === activeOperation
+                          )?.value;
                           const isMetaMet = c.meta && !isNaN(Number(val)) && Number(val) >= c.meta;
                           
                           if (isSectorOnly) {
@@ -1695,7 +1831,7 @@ function SectorDashboard({
                         <td className="p-0 text-center bg-gray-50/30 sticky right-0 z-20 shadow-[-4px_0_8px_rgba(0,0,0,0.02)]">
                           <input 
                             type="text"
-                            key={`${indicator.id}-sector-${displayValue}-${monthId}`}
+                            key={`${indicator.id}-sector-${displayValue}-${monthId}-${activeOperation}`}
                             className={cn(
                               "w-full h-full p-5 text-center text-sm font-mono font-black focus:bg-white focus:outline-none transition-colors",
                               isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : ""
@@ -1774,6 +1910,127 @@ function SectorDashboard({
                )}
             </motion.div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GeneralIndicatorView({ 
+  indicators, 
+  dataValues, 
+  monthId,
+  operation,
+  operationDates,
+  onSaveValue,
+  onAddDate,
+  onDeleteDate
+}: { 
+  indicators: Indicator[], 
+  dataValues: DataValue[], 
+  monthId: string,
+  operation: 'sittax' | 'openix',
+  operationDates: OperationDate[],
+  onSaveValue: (indicatorId: string, collaboratorId: string, value: string | number, date?: string) => void,
+  onAddDate: (date: string) => void,
+  onDeleteDate: (dateId: string) => void
+}) {
+  const currentDates = operationDates
+    .filter(od => od.monthId === monthId && od.operation === operation)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const [newDate, setNewDate] = useState('');
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-1">
+            Indicador Geral - {operation.toUpperCase()}
+          </h2>
+          <p className="text-gray-500 font-medium">Acompanhamento diário consolidado por setor.</p>
+        </div>
+        <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
+          <input 
+            type="date" 
+            value={newDate}
+            onChange={(e) => setNewDate(e.target.value)}
+            className="text-sm border-none focus:ring-0 cursor-pointer font-bold text-gray-900"
+          />
+          <Button 
+            size="sm" 
+            onClick={() => { if (newDate) { onAddDate(newDate); setNewDate(''); } }}
+            disabled={!newDate}
+          >
+            <Plus size={16} />
+            Adicionar Data
+          </Button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-gray-100 shadow-2xl shadow-gray-200/50 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-900 text-white">
+                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-0 z-20 bg-gray-900">Setor</th>
+                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-[120px] z-20 bg-gray-900">Indicador</th>
+                {currentDates.map(od => (
+                  <th key={od.id} className="p-4 text-center text-[10px] font-black uppercase tracking-widest border-r border-white/10 min-w-[120px]">
+                    <div className="flex flex-col items-center gap-1">
+                      <span>{format(parse(od.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy')}</span>
+                      <button 
+                        onClick={() => onDeleteDate(od.id)}
+                        className="text-red-400 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {SECTORS.map(sector => {
+                const sectorIndicators = indicators.filter(i => i.sectorId === sector.id);
+                return sectorIndicators.map((indicator, idx) => (
+                  <tr key={indicator.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    {idx === 0 && (
+                      <td className="p-4 border-r border-gray-50 font-bold text-xs text-gray-900 align-top sticky left-0 z-10 bg-white" rowSpan={sectorIndicators.length}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-4 rounded-full" style={{ backgroundColor: sector.color }} />
+                          {sector.name}
+                        </div>
+                      </td>
+                    )}
+                    <td className="p-4 border-r border-gray-50 text-xs font-medium text-gray-600 sticky left-[120px] z-10 bg-white">
+                      {indicator.name}
+                    </td>
+                    {currentDates.map(od => {
+                      const dv = dataValues.find(d => 
+                        d.indicatorId === indicator.id && 
+                        d.collaboratorId === 'sector' && 
+                        d.monthId === monthId && 
+                        d.operation === operation &&
+                        d.date === od.date
+                      );
+                      return (
+                        <td key={od.id} className="p-0 border-r border-gray-50">
+                          <input 
+                            type="text"
+                            defaultValue={dv?.value || ''}
+                            onBlur={(e) => onSaveValue(indicator.id, 'sector', e.target.value, od.date)}
+                            className="w-full h-full p-4 text-center text-xs font-mono font-bold text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:bg-orange-50/30 transition-all"
+                            placeholder="-"
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ));
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1992,9 +2249,20 @@ function IndicatorForm({ initialData, onSubmit, onCancel }: { initialData?: Indi
   const [name, setName] = useState(initialData?.name || '');
   const [type, setType] = useState<IndicatorType>(initialData?.type || 'number');
   const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || false);
+  const [metaSittax, setMetaSittax] = useState(initialData?.metaSittax?.toString() || '');
+  const [metaOpenix, setMetaOpenix] = useState(initialData?.metaOpenix?.toString() || '');
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, type, isSectorOnly }); }} className="space-y-6">
+    <form onSubmit={(e) => { 
+      e.preventDefault(); 
+      onSubmit({ 
+        name, 
+        type, 
+        isSectorOnly,
+        metaSittax: metaSittax ? parseFloat(metaSittax) : undefined,
+        metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined
+      }); 
+    }} className="space-y-6">
       <Input label="Nome do Indicador" value={name} onChange={(e) => setName(e.target.value)} required />
       <Select 
         label="Tipo de Dado" 
@@ -2007,6 +2275,24 @@ function IndicatorForm({ initialData, onSubmit, onCancel }: { initialData?: Indi
           { value: 'time', label: 'Tempo (hh:mm:ss)' },
         ]}
       />
+      <div className="grid grid-cols-2 gap-4">
+        <Input 
+          label="Meta Sittax" 
+          type="number" 
+          step="0.01" 
+          value={metaSittax} 
+          onChange={(e) => setMetaSittax(e.target.value)} 
+          placeholder="Ex: 95"
+        />
+        <Input 
+          label="Meta Openix" 
+          type="number" 
+          step="0.01" 
+          value={metaOpenix} 
+          onChange={(e) => setMetaOpenix(e.target.value)} 
+          placeholder="Ex: 95"
+        />
+      </div>
       <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
         <input 
           type="checkbox" 

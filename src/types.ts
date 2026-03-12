@@ -31,6 +31,8 @@ export interface Indicator {
   type: IndicatorType;
   order: number;
   isSectorOnly?: boolean;
+  metaSittax?: number;
+  metaOpenix?: number;
 }
 
 export interface DataValue {
@@ -39,6 +41,15 @@ export interface DataValue {
   indicatorId: string;
   collaboratorId: string; // Can be 'sector' for the sector total if manual, but usually calculated
   value: number | string;
+  operation?: 'sittax' | 'openix';
+  date?: string; // YYYY-MM-DD
+}
+
+export interface OperationDate {
+  id: string;
+  monthId: string;
+  operation: 'sittax' | 'openix';
+  date: string; // YYYY-MM-DD
 }
 
 export interface SectorHighlight {
