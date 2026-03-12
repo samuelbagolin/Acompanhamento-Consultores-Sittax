@@ -41,6 +41,13 @@ export interface DataValue {
   value: number | string;
 }
 
+export interface SectorHighlight {
+  id: string;
+  monthId: string;
+  sectorId: string;
+  collaboratorId: string;
+}
+
 export type DevelopmentClassification = 'DIRECIONAR' | 'GUIAR' | 'MOTIVAR' | 'DELEGAR';
 
 export interface DevelopmentEvaluation {

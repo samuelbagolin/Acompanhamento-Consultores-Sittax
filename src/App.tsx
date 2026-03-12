@@ -77,6 +77,7 @@ import {
   Indicator, 
   DataValue, 
   IndicatorType,
+  SectorHighlight,
   DevelopmentEvaluation,
   DevelopmentClassification,
   TECHNICAL_QUESTIONS,
@@ -248,6 +249,7 @@ export default function App() {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [dataValues, setDataValues] = useState<DataValue[]>([]);
   const [evaluations, setEvaluations] = useState<DevelopmentEvaluation[]>([]);
+  const [sectorHighlights, setSectorHighlights] = useState<SectorHighlight[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -284,7 +286,8 @@ export default function App() {
       await Promise.all([
         fetchMonths(),
         fetchSectorOverrides(),
-        fetchEvaluations()
+        fetchEvaluations(),
+        fetchSectorHighlights()
       ]);
       setLoading(false);
     };
@@ -294,6 +297,11 @@ export default function App() {
   const fetchEvaluations = async () => {
     const snapshot = await getDocs(collection(db, 'evaluations'));
     setEvaluations(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DevelopmentEvaluation)));
+  };
+
+  const fetchSectorHighlights = async () => {
+    const snapshot = await getDocs(collection(db, 'sectorHighlights'));
+    setSectorHighlights(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as SectorHighlight)));
   };
 
   const fetchSectorOverrides = async () => {
@@ -414,15 +422,17 @@ export default function App() {
   };
 
   const fetchMonthData = async (monthId: string) => {
-    const [colSnap, indSnap, valSnap] = await Promise.all([
+    const [colSnap, indSnap, valSnap, highSnap] = await Promise.all([
       getDocs(query(collection(db, 'collaborators'), where('monthId', '==', monthId))),
       getDocs(query(collection(db, 'indicators'), where('monthId', '==', monthId))),
-      getDocs(query(collection(db, 'dataValues'), where('monthId', '==', monthId)))
+      getDocs(query(collection(db, 'dataValues'), where('monthId', '==', monthId))),
+      getDocs(query(collection(db, 'sectorHighlights'), where('monthId', '==', monthId)))
     ]);
 
     setCollaborators(colSnap.docs.map(d => ({ id: d.id, ...d.data() } as Collaborator)));
     setIndicators(indSnap.docs.map(d => ({ id: d.id, ...d.data() } as Indicator)).sort((a, b) => a.order - b.order));
     setDataValues(valSnap.docs.map(d => ({ id: d.id, ...d.data() } as DataValue)));
+    setSectorHighlights(highSnap.docs.map(d => ({ id: d.id, ...d.data() } as SectorHighlight)));
   };
 
   const handleCreateMonth = async (name: string, copyFromId?: string) => {
@@ -517,15 +527,36 @@ export default function App() {
       await updateDoc(doc(db, 'dataValues', existing.id), { value: finalValue });
     } else {
       await addDoc(collection(db, 'dataValues'), {
-        monthId: selectedMonthId,
         indicatorId,
         collaboratorId,
+        monthId: selectedMonthId,
         value: finalValue
       });
     }
     fetchMonthData(selectedMonthId);
   };
 
+  const handleToggleHighlight = async (sectorId: string, monthId: string, collaboratorId: string) => {
+    const existing = sectorHighlights.find(h => h.sectorId === sectorId && h.monthId === monthId);
+    
+    if (existing) {
+      if (existing.collaboratorId === collaboratorId) {
+        // Remove highlight
+        await deleteDoc(doc(db, 'sectorHighlights', existing.id));
+      } else {
+        // Update highlight
+        await updateDoc(doc(db, 'sectorHighlights', existing.id), { collaboratorId });
+      }
+    } else {
+      // Create highlight
+      await addDoc(collection(db, 'sectorHighlights'), {
+        sectorId,
+        monthId,
+        collaboratorId
+      });
+    }
+    fetchMonthData(monthId);
+  };
   const handleAddCollaborator = async (data: Partial<Collaborator>) => {
     if (editingCollaborator) {
       await updateDoc(doc(db, 'collaborators', editingCollaborator.id), data);
@@ -897,6 +928,8 @@ export default function App() {
                   indicators={indicators} 
                   dataValues={dataValues} 
                   collaborators={collaborators} 
+                  sectorHighlights={sectorHighlights}
+                  monthId={selectedMonthId}
                   onNavigate={setActiveSectorId}
                 />
               ) : activeSectorId === 'development' ? (
@@ -929,7 +962,9 @@ export default function App() {
                   collaborators={collaborators.filter(c => c.sectorId === activeSectorId)}
                   dataValues={dataValues}
                   evaluations={evaluations}
+                  sectorHighlights={sectorHighlights}
                   onSaveValue={handleSaveValue}
+                  onToggleHighlight={handleToggleHighlight}
                   onAddCollaborator={() => setIsCollaboratorModalOpen(true)}
                   onEditCollaborator={(c) => { setEditingCollaborator(c); setIsCollaboratorModalOpen(true); }}
                   onDeleteCollaborator={handleDeleteCollaborator}
@@ -1418,7 +1453,9 @@ function SectorDashboard({
   collaborators, 
   dataValues, 
   evaluations,
+  sectorHighlights,
   onSaveValue,
+  onToggleHighlight,
   onAddCollaborator,
   onEditCollaborator,
   onDeleteCollaborator,
@@ -1434,7 +1471,9 @@ function SectorDashboard({
   collaborators: Collaborator[], 
   dataValues: DataValue[],
   evaluations: DevelopmentEvaluation[],
+  sectorHighlights: SectorHighlight[],
   onSaveValue: (indId: string, colId: string, val: string | number) => void,
+  onToggleHighlight: (sectorId: string, monthId: string, colId: string) => void,
   onAddCollaborator: () => void,
   onEditCollaborator: (c: Collaborator) => void,
   onDeleteCollaborator: (id: string) => void,
@@ -1484,11 +1523,11 @@ function SectorDashboard({
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
         <div className="xl:col-span-3">
           <div className="bg-white rounded-[2rem] border border-gray-100 shadow-2xl shadow-gray-200/50 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="text-white" style={{ backgroundColor: sector.color }}>
-                    <th className="p-6 text-left border-r border-white/10 min-w-[240px]">
+            <div className="overflow-x-auto max-h-[700px] scrollbar-thin scrollbar-thumb-gray-200">
+              <table className="w-full border-collapse table-fixed">
+                <thead className="sticky top-0 z-30">
+                  <tr className="text-white shadow-md" style={{ backgroundColor: sector.color }}>
+                    <th className="p-6 text-left border-r border-white/10 w-[240px] sticky left-0 z-40" style={{ backgroundColor: sector.color }}>
                       <span className="text-xs font-black uppercase tracking-widest opacity-80">Indicador</span>
                     </th>
                     {collaborators.map(c => {
@@ -1503,14 +1542,17 @@ function SectorDashboard({
                         }
                       };
 
+                      const isHighlight = sectorHighlights.find(h => h.sectorId === sector.id && h.monthId === monthId && h.collaboratorId === c.id);
+
                       return (
-                        <th key={c.id} className="p-6 border-r border-white/10 min-w-[160px] group relative">
-                          <div className="flex flex-col items-center gap-3">
+                        <th key={c.id} className="p-6 border-r border-white/10 min-w-[160px] group relative overflow-hidden">
+                          <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-30" />
+                          <div className="relative z-10 flex flex-col items-center gap-3">
                             <div className="relative">
                               <img 
                                 src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
                                 alt={c.name} 
-                                className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-white/10 object-cover shadow-lg"
+                                className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-white/10 object-cover shadow-lg transition-transform group-hover:scale-105"
                                 referrerPolicy="no-referrer"
                               />
                               <div className="flex gap-1 absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1531,14 +1573,14 @@ function SectorDashboard({
                                 </button>
                               </div>
                             </div>
-                            <div className="text-center relative flex flex-col items-center">
-                              <span className="text-[10px] font-black uppercase tracking-tighter block leading-none mb-1">{c.name}</span>
-                              <div className="flex flex-col items-center">
-                                {c.meta && <span className="text-[9px] font-bold opacity-60">META: {c.meta}</span>}
+                            <div className="text-center relative flex flex-col items-center w-full">
+                              <span className="text-[10px] font-black uppercase tracking-tighter block leading-none mb-1 w-full text-center">{c.name}</span>
+                              <div className="flex flex-col items-center w-full">
+                                {c.meta && <span className="text-[9px] font-bold opacity-60 w-full text-center">META: {c.meta}</span>}
                                 
                                 {evalData && (
                                   <div className={cn(
-                                    "mt-1 px-2 py-0.5 rounded-md text-[8px] font-black text-white shadow-sm uppercase tracking-wider",
+                                    "mt-1 px-2 py-0.5 rounded-md text-[8px] font-black text-white shadow-sm uppercase tracking-wider inline-block",
                                     getBadgeColor(evalData.classification)
                                   )}>
                                     {evalData.classification}
@@ -1547,10 +1589,33 @@ function SectorDashboard({
                               </div>
                             </div>
                           </div>
+
+                          {/* Trophy Icon */}
+                          {isHighlight && (
+                            <div className="absolute top-2 left-2 z-20">
+                              <div className="bg-yellow-400 p-1.5 rounded-lg shadow-lg animate-bounce-subtle">
+                                <Award size={14} className="text-white" />
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="absolute bottom-2 right-2 z-20">
+                            <button 
+                              onClick={() => onToggleHighlight(sector.id, monthId, c.id)}
+                              className={cn(
+                                "p-1.5 rounded-lg transition-all flex items-center gap-1",
+                                isHighlight ? "bg-white/20" : "opacity-0 group-hover:opacity-100 hover:bg-white/20"
+                              )}
+                              title="Destaque do Mês"
+                            >
+                              {!isHighlight && <Award size={16} className="text-white/40" />}
+                              {isHighlight && <Settings size={12} className="text-white/60" />}
+                            </button>
+                          </div>
                         </th>
                       );
                     })}
-                    <th className="p-6 min-w-[140px]" style={{ backgroundColor: sector.color, filter: 'brightness(0.9)' }}>
+                    <th className="p-6 min-w-[140px] sticky right-0 z-40 shadow-[-4px_0_8px_rgba(0,0,0,0.05)]" style={{ backgroundColor: sector.color, filter: 'brightness(0.9)' }}>
                       <div className="flex flex-col items-center gap-2">
                         <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
                           {(() => {
@@ -1580,10 +1645,10 @@ function SectorDashboard({
                       indicator.name.toLowerCase().includes('(total)');
                     
                     return (
-                      <tr key={indicator.id} className={cn("transition-colors group", isSectorOnly ? "bg-gray-50/50" : "hover:bg-orange-50/30")}>
-                        <td className="p-5 border-r border-gray-50 bg-gray-50/30 relative">
+                      <tr key={indicator.id} className={cn("transition-colors group", isSectorOnly ? "bg-gray-50/50" : "hover:bg-gray-50/80")}>
+                        <td className="p-5 border-r border-gray-100 bg-white sticky left-0 z-20 group-hover:bg-gray-50 transition-colors">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-gray-700">{indicator.name}</span>
+                            <span className="text-sm font-bold text-gray-700 tracking-tight">{indicator.name}</span>
                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => onEditIndicator(indicator)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={12} /></button>
                               <button onClick={() => onDeleteIndicator(indicator.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={12} /></button>
@@ -1597,7 +1662,7 @@ function SectorDashboard({
                           if (isSectorOnly) {
                             return (
                               <td key={c.id} className="p-0 border-r border-gray-50 bg-gray-50/20 relative">
-                                <div className="w-full h-full p-5 flex items-center justify-center text-gray-300">
+                                <div className="w-full h-full p-5 flex items-center justify-center text-gray-300 font-mono">
                                   -
                                 </div>
                               </td>
@@ -1605,11 +1670,12 @@ function SectorDashboard({
                           }
 
                           return (
-                            <td key={c.id} className="p-0 border-r border-gray-50 relative">
+                            <td key={c.id} className="p-0 border-r border-gray-50 relative group/cell">
+                              <div className="absolute inset-0 bg-gray-50/0 group-hover/cell:bg-gray-50/50 transition-colors" />
                               <input 
                                 type="text"
                                 className={cn(
-                                  "w-full h-full p-5 text-center text-sm font-bold focus:bg-white focus:outline-none transition-colors",
+                                  "relative z-10 w-full h-full p-5 text-center text-sm font-mono font-bold focus:bg-white focus:outline-none transition-all",
                                   isNegative && Number(val) > 0 ? "text-red-600" : 
                                   isMetaMet ? "" : "text-gray-600"
                                 )}
@@ -1626,12 +1692,12 @@ function SectorDashboard({
                             </td>
                           );
                         })}
-                        <td className="p-0 text-center bg-orange-50/50 relative">
+                        <td className="p-0 text-center bg-gray-50/30 sticky right-0 z-20 shadow-[-4px_0_8px_rgba(0,0,0,0.02)]">
                           <input 
                             type="text"
                             key={`${indicator.id}-sector-${displayValue}-${monthId}`}
                             className={cn(
-                              "w-full h-full p-5 text-center text-sm font-black focus:bg-white focus:outline-none transition-colors",
+                              "w-full h-full p-5 text-center text-sm font-mono font-black focus:bg-white focus:outline-none transition-colors",
                               isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : ""
                             )}
                             style={{ color: isNegative && (parseFloat(String(displayValue)) > 0) ? undefined : sector.color }}
@@ -1714,7 +1780,23 @@ function SectorDashboard({
   );
 }
 
-function OverviewView({ sectors, indicators, dataValues, collaborators, onNavigate }: { sectors: Sector[], indicators: Indicator[], dataValues: DataValue[], collaborators: Collaborator[], onNavigate: (id: string) => void }) {
+function OverviewView({ 
+  sectors, 
+  indicators, 
+  dataValues, 
+  collaborators, 
+  sectorHighlights,
+  monthId,
+  onNavigate 
+}: { 
+  sectors: Sector[], 
+  indicators: Indicator[], 
+  dataValues: DataValue[], 
+  collaborators: Collaborator[], 
+  sectorHighlights: SectorHighlight[],
+  monthId: string,
+  onNavigate: (id: string) => void 
+}) {
   return (
     <div className="space-y-8">
       <div className="flex items-end justify-between">
@@ -1777,6 +1859,21 @@ function OverviewView({ sectors, indicators, dataValues, collaborators, onNaviga
                       </div>
                     )}
                   </div>
+                  {(() => {
+                    const highlight = sectorHighlights.find(h => h.sectorId === sector.id && h.monthId === monthId);
+                    const winner = highlight ? collaborators.find(c => c.id === highlight.collaboratorId) : null;
+                    
+                    if (winner) {
+                      return (
+                        <div className="flex items-center gap-2 bg-yellow-50 px-3 py-1.5 rounded-lg border border-yellow-100">
+                          <Award size={14} className="text-yellow-600" />
+                          <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-tight">{winner.name}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  
                   {(() => {
                     const csatInd = sectorInds.find(i => i.name.toLowerCase().includes('csat'));
                     let csatDisplay = '-';

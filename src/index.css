@@ -7,6 +7,12 @@
   
   --color-brand-orange: #FF6B00;
   --color-brand-orange-hover: #E66000;
+
+  @keyframes bounce-subtle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+  --animate-bounce-subtle: bounce-subtle 2s ease-in-out infinite;
 }
 
 @layer base {
