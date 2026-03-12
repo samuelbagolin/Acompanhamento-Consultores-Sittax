@@ -722,7 +722,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-bold text-xl text-gray-900 tracking-tight">Sittax</h1>
-              <p className="text-[10px] uppercase tracking-widest text-[#FF6B00] font-bold">Performance Hub</p>
+              <p className="text-[10px] uppercase tracking-widest text-[#FF6B00] font-bold">Acompanhamento</p>
             </div>
           </div>
         </div>
@@ -1443,7 +1443,7 @@ function SectorDashboard({
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="bg-[#FF6B00] text-white">
+                  <tr className="text-white" style={{ backgroundColor: sector.color }}>
                     <th className="p-6 text-left border-r border-white/10 min-w-[240px]">
                       <span className="text-xs font-black uppercase tracking-widest opacity-80">Indicador</span>
                     </th>
@@ -1472,7 +1472,8 @@ function SectorDashboard({
                               <div className="flex gap-1 absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button 
                                   onClick={() => onEvaluateCollaborator(c)}
-                                  className="bg-[#FF6B00] text-white p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                  className="text-white p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                  style={{ backgroundColor: sector.color }}
                                   title="Lançar Avaliação"
                                 >
                                   <BrainCircuit size={10} />
@@ -1505,10 +1506,19 @@ function SectorDashboard({
                         </th>
                       );
                     })}
-                    <th className="p-6 bg-[#E66000] min-w-[140px]">
+                    <th className="p-6 min-w-[140px]" style={{ backgroundColor: sector.color, filter: 'brightness(0.9)' }}>
                       <div className="flex flex-col items-center gap-2">
                         <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
-                          <TrendingUp size={24} />
+                          {(() => {
+                            const Icon = {
+                              Calendar,
+                              UserPlus,
+                              TrendingUp,
+                              Heart,
+                              MessageSquare
+                            }[sector.icon || ''] || LayoutDashboard;
+                            return <Icon size={24} />;
+                          })()}
                         </div>
                         <span className="text-xs font-black uppercase tracking-widest">Setor</span>
                       </div>
@@ -1521,9 +1531,12 @@ function SectorDashboard({
                     const sectorValue = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === 'sector' && dv.monthId === monthId)?.value;
                     const displayValue = sectorValue !== undefined && sectorValue !== '' ? sectorValue : rowTotal;
                     const isNegative = indicator.name.toLowerCase().includes('perdido') || indicator.name.toLowerCase().includes('cancelamento');
+                    const isSectorOnly = indicator.isSectorOnly || 
+                      indicator.name.toLowerCase().includes('(setor)') || 
+                      indicator.name.toLowerCase().includes('(total)');
                     
                     return (
-                      <tr key={indicator.id} className="hover:bg-orange-50/30 transition-colors group">
+                      <tr key={indicator.id} className={cn("transition-colors group", isSectorOnly ? "bg-gray-50/50" : "hover:bg-orange-50/30")}>
                         <td className="p-5 border-r border-gray-50 bg-gray-50/30 relative">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-bold text-gray-700">{indicator.name}</span>
@@ -1537,7 +1550,7 @@ function SectorDashboard({
                           const val = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === c.id)?.value;
                           const isMetaMet = c.meta && !isNaN(Number(val)) && Number(val) >= c.meta;
                           
-                          if (indicator.isSectorOnly) {
+                          if (isSectorOnly) {
                             return (
                               <td key={c.id} className="p-0 border-r border-gray-50 bg-gray-50/20 relative">
                                 <div className="w-full h-full p-5 flex items-center justify-center text-gray-300">
@@ -1554,15 +1567,16 @@ function SectorDashboard({
                                 className={cn(
                                   "w-full h-full p-5 text-center text-sm font-bold focus:bg-white focus:outline-none transition-colors",
                                   isNegative && Number(val) > 0 ? "text-red-600" : 
-                                  isMetaMet ? "text-[#FF6B00]" : "text-gray-600"
+                                  isMetaMet ? "" : "text-gray-600"
                                 )}
+                                style={{ color: !isNegative && isMetaMet ? sector.color : undefined }}
                                 defaultValue={formatValue(val, indicator.type)}
                                 onBlur={(e) => onSaveValue(indicator.id, c.id, e.target.value)}
                                 placeholder="-"
                               />
                               {isMetaMet && (
                                 <div className="absolute top-1 right-1">
-                                  <CheckCircle2 size={10} className="text-[#FF6B00]" />
+                                  <CheckCircle2 size={10} style={{ color: sector.color }} />
                                 </div>
                               )}
                             </td>
@@ -1574,8 +1588,9 @@ function SectorDashboard({
                             key={`${indicator.id}-sector-${displayValue}-${monthId}`}
                             className={cn(
                               "w-full h-full p-5 text-center text-sm font-black focus:bg-white focus:outline-none transition-colors",
-                              isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : "text-[#FF6B00]"
+                              isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : ""
                             )}
+                            style={{ color: isNegative && (parseFloat(String(displayValue)) > 0) ? undefined : sector.color }}
                             defaultValue={sectorValue !== undefined && sectorValue !== '' ? sectorValue : formatValue(rowTotal, indicator.type)}
                             onBlur={(e) => {
                               const val = e.target.value;
@@ -1687,7 +1702,7 @@ function OverviewView({ sectors, indicators, dataValues, collaborators, onNaviga
                     </div>
                     <h3 className="font-bold text-gray-900">{sector.name}</h3>
                   </div>
-                  <ChevronRight size={18} className="text-gray-300 group-hover:text-[#FF6B00] transition-colors" />
+                  <ChevronRight size={18} className="text-gray-300 group-hover:text-gray-600 transition-colors" />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
@@ -1741,7 +1756,7 @@ function OverviewView({ sectors, indicators, dataValues, collaborators, onNaviga
                     return (
                       <div className="flex flex-col items-end">
                         <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-1">CSAT Médio</span>
-                        <span className="text-sm font-black text-[#FF6B00] flex items-center gap-1">
+                        <span className="text-sm font-black flex items-center gap-1" style={{ color: sector.color }}>
                           <CheckCircle2 size={14} />
                           {csatDisplay}
                         </span>

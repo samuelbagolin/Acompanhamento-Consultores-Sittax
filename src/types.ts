@@ -76,9 +76,9 @@ export const BEHAVIORAL_QUESTIONS = [
 ];
 
 export const SECTORS: Sector[] = [
-  { id: 'agendamento', name: 'Agendamento', color: '#FF6B00', icon: 'Calendar' },
-  { id: 'onboarding', name: 'Onboarding', color: '#3B82F6', icon: 'UserPlus' },
-  { id: 'ongoing', name: 'Ongoing', color: '#10B981', icon: 'TrendingUp' },
-  { id: 'retencao', name: 'Retenção', color: '#F43F5E', icon: 'Heart' },
-  { id: 'chat', name: 'Chat', color: '#8B5CF6', icon: 'MessageSquare' },
+  { id: 'agendamento', name: 'Agendamento', color: '#d3a331', icon: 'Calendar' },
+  { id: 'onboarding', name: 'Onboarding', color: '#d35c35', icon: 'UserPlus' },
+  { id: 'ongoing', name: 'Ongoing', color: '#d35c35', icon: 'TrendingUp' },
+  { id: 'retencao', name: 'Retenção', color: '#4cb4eb', icon: 'Heart' },
+  { id: 'chat', name: 'Atendimento', color: '#04934c', icon: 'MessageSquare' },
 ];
