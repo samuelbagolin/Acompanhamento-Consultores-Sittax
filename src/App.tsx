@@ -618,11 +618,12 @@ export default function App() {
     if (editingIndicator) {
       await updateDoc(doc(db, 'indicators', editingIndicator.id), data);
     } else {
-      const sectorIndicators = indicators.filter(i => i.sectorId === activeSectorId);
+      const targetSectorId = data.sectorId || activeSectorId;
+      const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId);
       await addDoc(collection(db, 'indicators'), {
         ...data,
         monthId: selectedMonthId,
-        sectorId: activeSectorId,
+        sectorId: targetSectorId,
         order: sectorIndicators.length
       });
     }
@@ -877,7 +878,7 @@ export default function App() {
                     }}
                     className={cn(
                       "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                      activeSectorId === 'general-sittax' ? "text-[#FF6B00] bg-orange-50/50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                      activeSectorId === 'general-sittax' ? "text-[#FF6B00] bg-orange-50/50" : "text-[#FF6B00]/70 hover:text-[#FF6B00] hover:bg-orange-50/30"
                     )}
                   >
                     Sittax
@@ -890,7 +891,7 @@ export default function App() {
                     }}
                     className={cn(
                       "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                      activeSectorId === 'general-openix' ? "text-[#FF6B00] bg-orange-50/50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                      activeSectorId === 'general-openix' ? "text-[#FF6B00] bg-orange-50/50" : "text-[#FF6B00]/70 hover:text-[#FF6B00] hover:bg-orange-50/30"
                     )}
                   >
                     Openix
@@ -1078,6 +1079,13 @@ export default function App() {
                   onSaveValue={handleSaveValue}
                   onAddDate={handleAddDate}
                   onDeleteDate={handleDeleteDate}
+                  onAddIndicator={() => setIsIndicatorModalOpen(true)}
+                  onDeleteIndicator={async (id) => {
+                    if (confirm('Deseja realmente excluir este indicador?')) {
+                      await deleteDoc(doc(db, 'indicators', id));
+                      fetchMonthData(selectedMonthId);
+                    }
+                  }}
                 />
               ) : (
                 <SectorDashboard 
@@ -1150,6 +1158,7 @@ export default function App() {
           initialData={editingIndicator || undefined}
           onSubmit={handleAddIndicator}
           onCancel={() => { setIsIndicatorModalOpen(false); setEditingIndicator(null); }}
+          showSectorSelect={activeSectorId.startsWith('general')}
         />
       </Modal>
 
@@ -1905,7 +1914,7 @@ function SectorDashboard({
                ) : (
                  <div className="text-center p-8 bg-gray-50 rounded-[2rem] border border-gray-200 backdrop-blur-sm shadow-xl">
                    <p className="text-gray-900 font-black text-4xl leading-none tracking-tighter mb-1">{sector.name.toUpperCase()}</p>
-                   <p className="text-gray-400 font-bold text-xl leading-none tracking-widest opacity-60">SITTAX</p>
+                   <p className="text-[#FF6B00] font-bold text-xl leading-none tracking-widest opacity-80">{activeOperation.toUpperCase()}</p>
                  </div>
                )}
             </motion.div>
@@ -1924,7 +1933,9 @@ function GeneralIndicatorView({
   operationDates,
   onSaveValue,
   onAddDate,
-  onDeleteDate
+  onDeleteDate,
+  onAddIndicator,
+  onDeleteIndicator
 }: { 
   indicators: Indicator[], 
   dataValues: DataValue[], 
@@ -1933,7 +1944,9 @@ function GeneralIndicatorView({
   operationDates: OperationDate[],
   onSaveValue: (indicatorId: string, collaboratorId: string, value: string | number, date?: string) => void,
   onAddDate: (date: string) => void,
-  onDeleteDate: (dateId: string) => void
+  onDeleteDate: (dateId: string) => void,
+  onAddIndicator: () => void,
+  onDeleteIndicator: (id: string) => void
 }) {
   const currentDates = operationDates
     .filter(od => od.monthId === monthId && od.operation === operation)
@@ -1945,26 +1958,32 @@ function GeneralIndicatorView({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-1">
+          <h2 className="text-3xl font-black text-[#FF6B00] uppercase tracking-tighter mb-1">
             Indicador Geral - {operation.toUpperCase()}
           </h2>
           <p className="text-gray-500 font-medium">Acompanhamento diário consolidado por setor.</p>
         </div>
-        <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
-          <input 
-            type="date" 
-            value={newDate}
-            onChange={(e) => setNewDate(e.target.value)}
-            className="text-sm border-none focus:ring-0 cursor-pointer font-bold text-gray-900"
-          />
-          <Button 
-            size="sm" 
-            onClick={() => { if (newDate) { onAddDate(newDate); setNewDate(''); } }}
-            disabled={!newDate}
-          >
-            <Plus size={16} />
-            Adicionar Data
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={onAddIndicator}>
+            <Settings size={18} />
+            Configurar Indicadores
           </Button>
+          <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
+            <input 
+              type="date" 
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+              className="text-sm border-none focus:ring-0 cursor-pointer font-bold text-gray-900"
+            />
+            <Button 
+              size="sm" 
+              onClick={() => { if (newDate) { onAddDate(newDate); setNewDate(''); } }}
+              disabled={!newDate}
+            >
+              <Plus size={16} />
+              Adicionar Data
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -2004,7 +2023,15 @@ function GeneralIndicatorView({
                       </td>
                     )}
                     <td className="p-4 border-r border-gray-50 text-xs font-medium text-gray-600 sticky left-[120px] z-10 bg-white">
-                      {indicator.name}
+                      <div className="flex items-center justify-between group/ind">
+                        <span>{indicator.name}</span>
+                        <button 
+                          onClick={() => onDeleteIndicator(indicator.id)}
+                          className="opacity-0 group-hover/ind:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </td>
                     {currentDates.map(od => {
                       const dv = dataValues.find(d => 
@@ -2245,9 +2272,10 @@ function CollaboratorForm({ initialData, onSubmit, onCancel }: { initialData?: C
   );
 }
 
-function IndicatorForm({ initialData, onSubmit, onCancel }: { initialData?: Indicator, onSubmit: (data: Partial<Indicator>) => void, onCancel: () => void }) {
+function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = false }: { initialData?: Indicator, onSubmit: (data: Partial<Indicator>) => void, onCancel: () => void, showSectorSelect?: boolean }) {
   const [name, setName] = useState(initialData?.name || '');
   const [type, setType] = useState<IndicatorType>(initialData?.type || 'number');
+  const [sectorId, setSectorId] = useState(initialData?.sectorId || SECTORS[0].id);
   const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || false);
   const [metaSittax, setMetaSittax] = useState(initialData?.metaSittax?.toString() || '');
   const [metaOpenix, setMetaOpenix] = useState(initialData?.metaOpenix?.toString() || '');
@@ -2258,11 +2286,20 @@ function IndicatorForm({ initialData, onSubmit, onCancel }: { initialData?: Indi
       onSubmit({ 
         name, 
         type, 
+        sectorId: showSectorSelect ? sectorId : undefined,
         isSectorOnly,
         metaSittax: metaSittax ? parseFloat(metaSittax) : undefined,
         metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined
       }); 
     }} className="space-y-6">
+      {showSectorSelect && (
+        <Select 
+          label="Setor" 
+          value={sectorId}
+          onChange={(e) => setSectorId(e.target.value)}
+          options={SECTORS.map(s => ({ value: s.id, label: s.name }))}
+        />
+      )}
       <Input label="Nome do Indicador" value={name} onChange={(e) => setName(e.target.value)} required />
       <Select 
         label="Tipo de Dado" 
