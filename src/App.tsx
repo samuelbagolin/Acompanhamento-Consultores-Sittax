@@ -33,7 +33,9 @@ import {
   UserPlus,
   Heart,
   MessageSquare,
-  ClipboardList
+  ClipboardList,
+  Menu,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -246,6 +248,13 @@ export default function App() {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [dataValues, setDataValues] = useState<DataValue[]>([]);
   const [evaluations, setEvaluations] = useState<DevelopmentEvaluation[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (window.innerWidth > 1024) {
+      setIsSidebarOpen(true);
+    }
+  }, []);
   
   // Modals state
   const [isNewMonthModalOpen, setIsNewMonthModalOpen] = useState(false);
@@ -713,9 +722,20 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
+      {/* Overlay for mobile */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-100 flex flex-col fixed h-full z-20">
-        <div className="p-8">
+      <aside className={cn(
+        "w-64 bg-white border-r border-gray-100 flex flex-col fixed h-full z-40 transition-transform duration-300",
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="p-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-[#FF6B00] rounded-xl flex items-center justify-center shadow-lg shadow-orange-200">
               <TrendingUp className="text-white w-6 h-6" />
@@ -725,6 +745,12 @@ export default function App() {
               <p className="text-[10px] uppercase tracking-widest text-[#FF6B00] font-bold">Acompanhamento</p>
             </div>
           </div>
+          <button 
+            onClick={() => setIsSidebarOpen(false)}
+            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={20} className="text-gray-400" />
+          </button>
         </div>
 
         <nav className="flex-1 px-4 space-y-1">
@@ -732,13 +758,19 @@ export default function App() {
             icon={<LayoutDashboard size={20} />} 
             label="Visão Geral" 
             active={activeSectorId === 'overview'} 
-            onClick={() => setActiveSectorId('overview')} 
+            onClick={() => { 
+              setActiveSectorId('overview'); 
+              if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+            }} 
           />
           <NavItem 
             icon={<BrainCircuit size={20} />} 
             label="Avaliação" 
             active={activeSectorId === 'development'} 
-            onClick={() => setActiveSectorId('development')} 
+            onClick={() => { 
+              setActiveSectorId('development'); 
+              if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+            }} 
           />
           <div className="pt-4 pb-2 px-4">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Setores</p>
@@ -758,7 +790,10 @@ export default function App() {
                   icon={<IconComponent size={18} style={{ color: sector.color }} />} 
                   label={sector.name} 
                   active={activeSectorId === sector.id} 
-                  onClick={() => setActiveSectorId(sector.id)} 
+                  onClick={() => { 
+                    setActiveSectorId(sector.id); 
+                    if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+                  }} 
                 />
               </div>
             );
@@ -774,10 +809,19 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 ml-64 min-h-screen flex flex-col">
+      <main className={cn(
+        "flex-1 min-h-screen flex flex-col w-full transition-all duration-300",
+        isSidebarOpen ? "lg:ml-64" : "lg:ml-0"
+      )}>
         {/* Topbar */}
-        <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10">
-          <div className="flex items-center gap-6">
+        <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-10">
+          <div className="flex items-center gap-4 lg:gap-6">
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <Menu size={24} className="text-gray-600" />
+            </button>
             <div className="flex items-center gap-2">
               <Calendar className="text-gray-400 w-5 h-5" />
               <div className="flex items-center gap-1 group">
