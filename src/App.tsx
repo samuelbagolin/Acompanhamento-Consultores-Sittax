@@ -930,10 +930,18 @@ export default function App() {
                       if (window.innerWidth < 1024) setIsSidebarOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                      "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-bold transition-all",
                       activeSectorId === 'general-sittax' ? "text-[#FF6B00] bg-orange-50/50" : "text-[#FF6B00]/70 hover:text-[#FF6B00] hover:bg-orange-50/30"
                     )}
                   >
+                    <div className="w-5 h-5 flex items-center justify-center bg-white rounded-md overflow-hidden shadow-sm">
+                      <img 
+                        src="https://i.postimg.cc/GtHcm40C/sittax-profile.jpg" 
+                        className="w-full h-full object-cover" 
+                        alt="Sittax"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
                     Sittax
                   </button>
                   <button 
@@ -943,10 +951,18 @@ export default function App() {
                       if (window.innerWidth < 1024) setIsSidebarOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                      "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-bold transition-all",
                       activeSectorId === 'general-openix' ? "text-[#FF6B00] bg-orange-50/50" : "text-[#FF6B00]/70 hover:text-[#FF6B00] hover:bg-orange-50/30"
                     )}
                   >
+                    <div className="w-5 h-5 flex items-center justify-center bg-white border border-gray-100 rounded-md p-0.5 shadow-sm">
+                      <img 
+                        src="https://openix.com.br/wp-content/uploads/2024/08/icon-logo.svg" 
+                        className="w-full h-full object-contain" 
+                        alt="Openix"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
                     Openix
                   </button>
                 </motion.div>
