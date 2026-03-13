@@ -275,6 +275,12 @@ export default function App() {
   const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
   const [devSelectedSectorId, setDevSelectedSectorId] = useState<string>(SECTORS[0].id);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
   const [isDevelopmentModalOpen, setIsDevelopmentModalOpen] = useState(false);
   const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator | null>(null);
 
@@ -488,35 +494,41 @@ export default function App() {
   };
 
   const handleDeleteMonth = async (id: string) => {
-    if (confirm('Deseja excluir este mês e todos os seus dados? Esta ação não pode ser desfeita.')) {
-      const batch = writeBatch(db);
-      
-      // Delete dataValues
-      const valSnap = await getDocs(query(collection(db, 'dataValues'), where('monthId', '==', id)));
-      valSnap.docs.forEach(d => batch.delete(d.ref));
-      
-      // Delete indicators
-      const indSnap = await getDocs(query(collection(db, 'indicators'), where('monthId', '==', id)));
-      indSnap.docs.forEach(d => batch.delete(d.ref));
-      
-      // Delete collaborators
-      const colSnap = await getDocs(query(collection(db, 'collaborators'), where('monthId', '==', id)));
-      colSnap.docs.forEach(d => batch.delete(d.ref));
-      
-      // Delete month
-      batch.delete(doc(db, 'months', id));
-      
-      await batch.commit();
-      
-      const remainingMonths = months.filter(m => m.id !== id);
-      setMonths(remainingMonths);
-      if (remainingMonths.length > 0) {
-        setSelectedMonthId(remainingMonths[0].id);
-      } else {
-        await fetchMonths();
+    setConfirmModal({
+      isOpen: true,
+      title: 'Excluir Mês',
+      message: 'Deseja excluir este mês e todos os seus dados? Esta ação não pode ser desfeita.',
+      onConfirm: async () => {
+        const batch = writeBatch(db);
+        
+        // Delete dataValues
+        const valSnap = await getDocs(query(collection(db, 'dataValues'), where('monthId', '==', id)));
+        valSnap.docs.forEach(d => batch.delete(d.ref));
+        
+        // Delete indicators
+        const indSnap = await getDocs(query(collection(db, 'indicators'), where('monthId', '==', id)));
+        indSnap.docs.forEach(d => batch.delete(d.ref));
+        
+        // Delete collaborators
+        const colSnap = await getDocs(query(collection(db, 'collaborators'), where('monthId', '==', id)));
+        colSnap.docs.forEach(d => batch.delete(d.ref));
+        
+        // Delete month
+        batch.delete(doc(db, 'months', id));
+        
+        await batch.commit();
+        
+        const remainingMonths = months.filter(m => m.id !== id);
+        setMonths(remainingMonths);
+        if (remainingMonths.length > 0) {
+          setSelectedMonthId(remainingMonths[0].id);
+        } else {
+          await fetchMonths();
+        }
+        setIsEditMonthModalOpen(false);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
-      setIsEditMonthModalOpen(false);
-    }
+    });
   };
 
   const handleSaveValue = async (indicatorId: string, collaboratorId: string, value: string | number, date?: string) => {
@@ -600,11 +612,39 @@ export default function App() {
     fetchMonthData(monthId);
   };
   const handleAddCollaborator = async (data: Partial<Collaborator>) => {
+    const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
     if (editingCollaborator) {
-      await updateDoc(doc(db, 'collaborators', editingCollaborator.id), data);
+      await updateDoc(doc(db, 'collaborators', editingCollaborator.id), cleanData);
     } else {
+      let finalData = { ...cleanData };
+      
+      // Replicate photo logic: find existing collaborator with same name and sector
+      if (!finalData.avatarUrl && finalData.name) {
+        try {
+          const q = query(
+            collection(db, 'collaborators'),
+            where('name', '==', finalData.name),
+            where('sectorId', '==', activeSectorId)
+          );
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            // Get all collaborators with this name/sector
+            const existingColabs = querySnapshot.docs.map(d => d.data() as Collaborator);
+            
+            // To follow "oldest to newest", we'd need to know the month order.
+            // For now, we'll just find the first one that has an avatarUrl.
+            const withPhoto = existingColabs.find(c => c.avatarUrl);
+            if (withPhoto) {
+              finalData.avatarUrl = withPhoto.avatarUrl;
+            }
+          }
+        } catch (error) {
+          console.error("Error replicating photo:", error);
+        }
+      }
+
       await addDoc(collection(db, 'collaborators'), {
-        ...data,
+        ...finalData,
         monthId: selectedMonthId,
         sectorId: activeSectorId
       });
@@ -615,13 +655,14 @@ export default function App() {
   };
 
   const handleAddIndicator = async (data: Partial<Indicator>) => {
+    const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
     if (editingIndicator) {
-      await updateDoc(doc(db, 'indicators', editingIndicator.id), data);
+      await updateDoc(doc(db, 'indicators', editingIndicator.id), cleanData);
     } else {
       const targetSectorId = data.sectorId || activeSectorId;
       const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId);
       await addDoc(collection(db, 'indicators'), {
-        ...data,
+        ...cleanData,
         monthId: selectedMonthId,
         sectorId: targetSectorId,
         order: sectorIndicators.length
@@ -633,17 +674,29 @@ export default function App() {
   };
 
   const handleDeleteCollaborator = async (id: string) => {
-    if (confirm('Deseja remover este colaborador?')) {
-      await deleteDoc(doc(db, 'collaborators', id));
-      fetchMonthData(selectedMonthId);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remover Colaborador',
+      message: 'Deseja realmente remover este colaborador? Esta ação não pode ser desfeita.',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'collaborators', id));
+        fetchMonthData(selectedMonthId);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleDeleteIndicator = async (id: string) => {
-    if (confirm('Deseja remover este indicador?')) {
-      await deleteDoc(doc(db, 'indicators', id));
-      fetchMonthData(selectedMonthId);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remover Indicador',
+      message: 'Deseja realmente remover este indicador? Todos os dados vinculados serão perdidos.',
+      onConfirm: async () => {
+        await deleteDoc(doc(db, 'indicators', id));
+        fetchMonthData(selectedMonthId);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleUpdateSector = async (data: Partial<Sector>) => {
@@ -1065,9 +1118,18 @@ export default function App() {
                     fetchEvaluations();
                   }}
                   onDeleteEvaluation={async (id) => {
-                    await deleteDoc(doc(db, 'evaluations', id));
-                    fetchEvaluations();
+                    setConfirmModal({
+                      isOpen: true,
+                      title: 'Remover Avaliação',
+                      message: 'Deseja realmente remover esta avaliação? Esta ação não pode ser desfeita.',
+                      onConfirm: async () => {
+                        await deleteDoc(doc(db, 'evaluations', id));
+                        fetchEvaluations();
+                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                      }
+                    });
                   }}
+                  onDeleteCollaborator={handleDeleteCollaborator}
                 />
               ) : activeSectorId.startsWith('general') ? (
                 <GeneralIndicatorView 
@@ -1080,12 +1142,8 @@ export default function App() {
                   onAddDate={handleAddDate}
                   onDeleteDate={handleDeleteDate}
                   onAddIndicator={() => setIsIndicatorModalOpen(true)}
-                  onDeleteIndicator={async (id) => {
-                    if (confirm('Deseja realmente excluir este indicador?')) {
-                      await deleteDoc(doc(db, 'indicators', id));
-                      fetchMonthData(selectedMonthId);
-                    }
-                  }}
+                  onEditIndicator={(i) => { setEditingIndicator(i); setIsIndicatorModalOpen(true); }}
+                  onDeleteIndicator={handleDeleteIndicator}
                 />
               ) : (
                 <SectorDashboard 
@@ -1145,6 +1203,11 @@ export default function App() {
         <CollaboratorForm 
           initialData={editingCollaborator || undefined}
           onSubmit={handleAddCollaborator}
+          onDelete={editingCollaborator ? () => {
+            handleDeleteCollaborator(editingCollaborator.id);
+            setIsCollaboratorModalOpen(false);
+            setEditingCollaborator(null);
+          } : undefined}
           onCancel={() => { setIsCollaboratorModalOpen(false); setEditingCollaborator(null); }}
         />
       </Modal>
@@ -1199,6 +1262,20 @@ export default function App() {
           />
         )}
       </Modal>
+
+      <Modal 
+        isOpen={confirmModal.isOpen} 
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} 
+        title={confirmModal.title}
+      >
+        <div className="space-y-6">
+          <p className="text-gray-600 font-medium">{confirmModal.message}</p>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="outline" onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmModal.onConfirm}>Confirmar Exclusão</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1213,7 +1290,8 @@ function DevelopmentView({
   selectedSectorId,
   onSectorChange,
   onSaveEvaluation,
-  onDeleteEvaluation
+  onDeleteEvaluation,
+  onDeleteCollaborator
 }: { 
   sectors: Sector[], 
   collaborators: Collaborator[], 
@@ -1222,7 +1300,8 @@ function DevelopmentView({
   selectedSectorId: string,
   onSectorChange: (id: string) => void,
   onSaveEvaluation: (data: Partial<DevelopmentEvaluation>) => Promise<void>,
-  onDeleteEvaluation: (id: string) => Promise<void>
+  onDeleteEvaluation: (id: string) => Promise<void>,
+  onDeleteCollaborator: (id: string) => Promise<void>
 }) {
   const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
   const [selectedColab, setSelectedColab] = useState<Collaborator | null>(null);
@@ -1304,7 +1383,7 @@ function DevelopmentView({
                         <div key={e.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-xl border border-gray-100">
                           <img 
                             src={colab?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${colab?.name}`} 
-                            className="w-6 h-6 rounded-lg object-cover"
+                            className="w-6 h-6 rounded-lg object-cover aspect-square"
                             alt={colab?.name}
                             referrerPolicy="no-referrer"
                           />
@@ -1353,7 +1432,7 @@ function DevelopmentView({
                   <div className="relative">
                     <img 
                       src={colab.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${colab.name}`} 
-                      className="w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white"
+                      className="w-20 h-20 rounded-2xl object-cover aspect-square shadow-md border-2 border-white"
                       alt={colab.name}
                       referrerPolicy="no-referrer"
                     />
@@ -1390,12 +1469,22 @@ function DevelopmentView({
                     >
                       {evalData ? "Editar" : "Avaliar"}
                     </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="px-3 text-gray-400 hover:text-red-500 hover:border-red-200"
+                      onClick={() => onDeleteCollaborator(colab.id)}
+                      title="Remover Colaborador"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
                     {evalData && (
                       <Button 
                         variant="danger" 
                         size="sm" 
                         className="px-3"
                         onClick={() => onDeleteEvaluation(evalData.id)}
+                        title="Remover Avaliação"
                       >
                         <Trash2 size={14} />
                       </Button>
@@ -1693,7 +1782,7 @@ function SectorDashboard({
                               <img 
                                 src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
                                 alt={c.name} 
-                                className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-white/10 object-cover shadow-lg transition-transform group-hover:scale-105"
+                                className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-white/10 object-cover aspect-square shadow-lg transition-transform group-hover:scale-105"
                                 referrerPolicy="no-referrer"
                               />
                               <div className="flex gap-1 absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1711,6 +1800,13 @@ function SectorDashboard({
                                   title="Editar Colaborador"
                                 >
                                   <Edit2 size={10} />
+                                </button>
+                                <button 
+                                  onClick={() => onDeleteCollaborator(c.id)}
+                                  className="bg-white text-red-500 p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                  title="Remover Colaborador"
+                                >
+                                  <Trash2 size={10} />
                                 </button>
                               </div>
                             </div>
@@ -1907,7 +2003,7 @@ function SectorDashboard({
                    <img 
                      src={sector.logoUrl} 
                      alt={sector.name} 
-                     className="max-w-full h-auto drop-shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative z-10" 
+                     className="max-w-full h-auto object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative z-10" 
                      referrerPolicy="no-referrer" 
                    />
                  </div>
@@ -1935,6 +2031,7 @@ function GeneralIndicatorView({
   onAddDate,
   onDeleteDate,
   onAddIndicator,
+  onEditIndicator,
   onDeleteIndicator
 }: { 
   indicators: Indicator[], 
@@ -1946,6 +2043,7 @@ function GeneralIndicatorView({
   onAddDate: (date: string) => void,
   onDeleteDate: (dateId: string) => void,
   onAddIndicator: () => void,
+  onEditIndicator: (indicator: Indicator) => void,
   onDeleteIndicator: (id: string) => void
 }) {
   const currentDates = operationDates
@@ -1991,9 +2089,9 @@ function GeneralIndicatorView({
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-gray-900 text-white">
-                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-0 z-20 bg-gray-900">Setor</th>
-                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-[120px] z-20 bg-gray-900">Indicador</th>
+              <tr className="bg-[#FF6B00] text-white">
+                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-0 z-20 bg-[#FF6B00]">Setor</th>
+                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-[120px] z-20 bg-[#FF6B00]">Indicador</th>
                 {currentDates.map(od => (
                   <th key={od.id} className="p-4 text-center text-[10px] font-black uppercase tracking-widest border-r border-white/10 min-w-[120px]">
                     <div className="flex flex-col items-center gap-1">
@@ -2012,6 +2110,23 @@ function GeneralIndicatorView({
             <tbody>
               {SECTORS.map(sector => {
                 const sectorIndicators = indicators.filter(i => i.sectorId === sector.id);
+                
+                if (sectorIndicators.length === 0) {
+                  return (
+                    <tr key={sector.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                      <td className="p-4 border-r border-gray-50 font-bold text-xs text-gray-900 sticky left-0 z-10 bg-white">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-4 rounded-full" style={{ backgroundColor: sector.color }} />
+                          {sector.name}
+                        </div>
+                      </td>
+                      <td colSpan={currentDates.length + 1} className="p-4 text-center text-gray-400 text-[10px] font-medium italic">
+                        Nenhum indicador configurado. Clique em "Configurar" para adicionar.
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return sectorIndicators.map((indicator, idx) => (
                   <tr key={indicator.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     {idx === 0 && (
@@ -2024,13 +2139,23 @@ function GeneralIndicatorView({
                     )}
                     <td className="p-4 border-r border-gray-50 text-xs font-medium text-gray-600 sticky left-[120px] z-10 bg-white">
                       <div className="flex items-center justify-between group/ind">
-                        <span>{indicator.name}</span>
-                        <button 
-                          onClick={() => onDeleteIndicator(indicator.id)}
-                          className="opacity-0 group-hover/ind:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        <span className="truncate mr-2">{indicator.name}</span>
+                        <div className="flex items-center gap-1 opacity-0 group-hover/ind:opacity-100 transition-all">
+                          <button 
+                            onClick={() => onEditIndicator(indicator)}
+                            className="text-gray-400 hover:text-[#FF6B00] p-1"
+                            title="Editar"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                          <button 
+                            onClick={() => onDeleteIndicator(indicator.id)}
+                            className="text-red-400 hover:text-red-600 p-1"
+                            title="Excluir"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
                     </td>
                     {currentDates.map(od => {
@@ -2105,7 +2230,7 @@ function OverviewView({
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden bg-white/10" style={{ backgroundColor: sector.color }}>
                       {sector.logoUrl ? (
-                        <img src={sector.logoUrl} alt={sector.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={sector.logoUrl} alt={sector.name} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       ) : (
                         <LayoutDashboard size={24} />
                       )}
@@ -2132,7 +2257,7 @@ function OverviewView({
                       <img 
                         key={c.id} 
                         src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
-                        className="w-8 h-8 rounded-lg border-2 border-white bg-gray-100" 
+                        className="w-8 h-8 rounded-lg border-2 border-white bg-gray-100 object-cover aspect-square" 
                         alt={c.name}
                         referrerPolicy="no-referrer"
                       />
@@ -2254,7 +2379,7 @@ function EditMonthForm({ month, onSubmit, onDelete, onCancel }: { month: Month, 
   );
 }
 
-function CollaboratorForm({ initialData, onSubmit, onCancel }: { initialData?: Collaborator, onSubmit: (data: Partial<Collaborator>) => void, onCancel: () => void }) {
+function CollaboratorForm({ initialData, onSubmit, onDelete, onCancel }: { initialData?: Collaborator, onSubmit: (data: Partial<Collaborator>) => void, onDelete?: () => void, onCancel: () => void }) {
   const [name, setName] = useState(initialData?.name || '');
   const [avatarUrl, setAvatarUrl] = useState(initialData?.avatarUrl || '');
   const [meta, setMeta] = useState(initialData?.meta?.toString() || '');
@@ -2265,6 +2390,12 @@ function CollaboratorForm({ initialData, onSubmit, onCancel }: { initialData?: C
       <Input label="URL da Imagem / Avatar" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
       <Input label="Meta Individual" type="number" value={meta} onChange={(e) => setMeta(e.target.value)} />
       <div className="flex justify-end gap-3 pt-4">
+        {initialData && onDelete && (
+          <Button variant="destructive" type="button" onClick={onDelete} className="mr-auto">
+            <Trash2 size={18} className="mr-2" />
+            Excluir
+          </Button>
+        )}
         <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
         <Button type="submit">{initialData ? 'Salvar Alterações' : 'Adicionar Colaborador'}</Button>
       </div>
