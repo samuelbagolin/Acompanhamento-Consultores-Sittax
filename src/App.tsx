@@ -660,13 +660,30 @@ export default function App() {
       await updateDoc(doc(db, 'indicators', editingIndicator.id), cleanData);
     } else {
       const targetSectorId = data.sectorId || activeSectorId;
-      const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId);
-      await addDoc(collection(db, 'indicators'), {
-        ...cleanData,
-        monthId: selectedMonthId,
-        sectorId: targetSectorId,
-        order: sectorIndicators.length
-      });
+      
+      // If adding from General view, add to all months
+      if (activeSectorId.startsWith('general')) {
+        const batch = writeBatch(db);
+        for (const m of months) {
+          const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === m.id);
+          const ref = doc(collection(db, 'indicators'));
+          batch.set(ref, {
+            ...cleanData,
+            monthId: m.id,
+            sectorId: targetSectorId,
+            order: sectorIndicators.length
+          });
+        }
+        await batch.commit();
+      } else {
+        const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === selectedMonthId);
+        await addDoc(collection(db, 'indicators'), {
+          ...cleanData,
+          monthId: selectedMonthId,
+          sectorId: targetSectorId,
+          order: sectorIndicators.length
+        });
+      }
     }
     fetchMonthData(selectedMonthId);
     setIsIndicatorModalOpen(false);
@@ -1730,7 +1747,8 @@ function SectorDashboard({
       const v = dataValues.find(dv => 
         dv.indicatorId === indicator.id && 
         dv.collaboratorId === c.id && 
-        (dv.operation || 'sittax') === activeOperation
+        (dv.operation || 'sittax') === activeOperation &&
+        !dv.date
       )?.value;
       if (v === undefined || v === '-' || v === '') return 0;
       const num = parseFloat(String(v).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
@@ -1890,7 +1908,13 @@ function SectorDashboard({
                 <tbody className="divide-y divide-gray-100">
                   {indicators.map(indicator => {
                     const rowTotal = getRowTotal(indicator);
-                    const sectorValue = dataValues.find(dv => dv.indicatorId === indicator.id && dv.collaboratorId === 'sector' && dv.monthId === monthId)?.value;
+                    const sectorValue = dataValues.find(dv => 
+                      dv.indicatorId === indicator.id && 
+                      dv.collaboratorId === 'sector' && 
+                      dv.monthId === monthId &&
+                      (dv.operation || 'sittax') === activeOperation &&
+                      !dv.date
+                    )?.value;
                     const displayValue = sectorValue !== undefined && sectorValue !== '' ? sectorValue : rowTotal;
                     const isNegative = indicator.name.toLowerCase().includes('perdido') || indicator.name.toLowerCase().includes('cancelamento');
                     const isSectorOnly = indicator.isSectorOnly || 
@@ -1958,11 +1982,13 @@ function SectorDashboard({
                               isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : ""
                             )}
                             style={{ color: isNegative && (parseFloat(String(displayValue)) > 0) ? undefined : sector.color }}
-                            defaultValue={sectorValue !== undefined && sectorValue !== '' ? sectorValue : formatValue(rowTotal, indicator.type)}
+                            defaultValue={sectorValue !== undefined && sectorValue !== '' ? formatValue(sectorValue, indicator.type) : formatValue(rowTotal, indicator.type)}
                             onBlur={(e) => {
                               const val = e.target.value;
                               const currentFormatted = formatValue(rowTotal, indicator.type);
-                              if (val !== currentFormatted || (sectorValue !== undefined && val !== sectorValue)) {
+                              const sectorFormatted = sectorValue !== undefined && sectorValue !== '' ? formatValue(sectorValue, indicator.type) : undefined;
+                              
+                              if (val !== currentFormatted && val !== sectorFormatted) {
                                 onSaveValue(indicator.id, 'sector', val);
                               }
                             }}
