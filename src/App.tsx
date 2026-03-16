@@ -185,27 +185,27 @@ const Card = ({
 );
 
 const Input = ({ label, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string, error?: string }) => (
-  <div className="space-y-1.5">
-    {label && <label className="text-sm font-medium text-gray-700">{label}</label>}
+  <div className="space-y-1 sm:space-y-1.5">
+    {label && <label className="text-xs sm:text-sm font-medium text-gray-700">{label}</label>}
     <input 
       className={cn(
-        'w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-all',
+        'w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-50 border border-gray-200 rounded-lg sm:rounded-xl text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-all',
         error && 'border-red-500 focus:ring-red-500/20 focus:border-red-500',
         props.className
       )}
       {...props}
     />
-    {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    {error && <p className="text-[10px] sm:text-xs text-red-500 mt-1">{error}</p>}
   </div>
 );
 
 const Select = ({ label, options, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string, options: { value: string, label: string }[] }) => (
-  <div className="space-y-1.5">
-    {label && <label className="text-sm font-medium text-gray-700">{label}</label>}
+  <div className="space-y-1 sm:space-y-1.5">
+    {label && <label className="text-xs sm:text-sm font-medium text-gray-700">{label}</label>}
     <div className="relative">
       <select 
         className={cn(
-          'w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-all cursor-pointer',
+          'w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-50 border border-gray-200 rounded-lg sm:rounded-xl text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] transition-all cursor-pointer',
           props.className
         )}
         {...props}
@@ -219,19 +219,19 @@ const Select = ({ label, options, ...props }: React.SelectHTMLAttributes<HTMLSel
 const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-md overflow-hidden max-h-[95vh] flex flex-col"
       >
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <h3 className="font-bold text-gray-900">{title}</h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
-            <Plus className="rotate-45 w-5 h-5 text-gray-500" />
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate pr-4">{title}</h3>
+          <button onClick={onClose} className="p-1.5 sm:p-2 hover:bg-gray-200 rounded-full transition-colors flex-shrink-0">
+            <Plus className="rotate-45 w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6 overflow-y-auto">
           {children}
         </div>
       </motion.div>
@@ -1048,75 +1048,78 @@ export default function App() {
         isSidebarOpen ? "lg:ml-64" : "lg:ml-0"
       )}>
         {/* Topbar */}
-        <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-10">
-          <div className="flex items-center gap-4 lg:gap-6">
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <Menu size={24} className="text-gray-600" />
-            </button>
-            <div className="flex items-center gap-2">
-              <Calendar className="text-gray-400 w-5 h-5" />
-              <div className="flex items-center gap-1 group">
-                <select 
-                  value={selectedMonthId}
-                  onChange={(e) => setSelectedMonthId(e.target.value)}
-                  className="bg-transparent font-bold text-gray-900 focus:outline-none cursor-pointer hover:text-[#FF6B00] transition-colors"
-                >
-                  {months.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-                <button 
-                  onClick={() => setIsEditMonthModalOpen(true)}
-                  className="p-1 text-gray-400 hover:text-[#FF6B00] transition-colors"
-                  title="Editar Mês"
-                >
-                  <Edit2 size={14} />
-                </button>
+        <header className="h-auto lg:h-20 bg-white border-b border-gray-100 flex flex-col lg:flex-row items-center justify-between px-4 py-4 lg:py-0 lg:px-8 sticky top-0 z-30 gap-4 lg:gap-0">
+          <div className="flex items-center justify-between w-full lg:w-auto gap-4 lg:gap-6">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Menu size={24} className="text-gray-600" />
+              </button>
+              <div className="flex items-center gap-2">
+                <Calendar className="text-gray-400 w-5 h-5 hidden sm:block" />
+                <div className="flex items-center gap-1 group">
+                  <select 
+                    value={selectedMonthId}
+                    onChange={(e) => setSelectedMonthId(e.target.value)}
+                    className="bg-transparent font-bold text-gray-900 focus:outline-none cursor-pointer hover:text-[#FF6B00] transition-colors text-sm lg:text-base"
+                  >
+                    {months.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <button 
+                    onClick={() => setIsEditMonthModalOpen(true)}
+                    className="p-1 text-gray-400 hover:text-[#FF6B00] transition-colors"
+                    title="Editar Mês"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="h-6 w-px bg-gray-100" />
+            
             <div className="flex bg-gray-50 p-1 rounded-lg">
                <button 
                  onClick={handleNextMonth}
                  className={cn(
-                   "px-3 py-1 text-xs font-bold rounded-md transition-all",
+                   "px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-all",
                    months.findIndex(m => m.id === selectedMonthId) === 0 
                     ? "text-gray-900 bg-white shadow-sm" 
                     : "text-gray-400 hover:text-gray-600"
                  )}
                >
-                 Mês Atual
+                 Atual
                </button>
                <button 
                  onClick={handlePrevMonth}
                  className={cn(
-                   "px-3 py-1 text-xs font-bold rounded-md transition-all",
+                   "px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-all",
                    months.findIndex(m => m.id === selectedMonthId) > 0 
                     ? "text-gray-900 bg-white shadow-sm" 
                     : "text-gray-400 hover:text-gray-600"
                  )}
                >
-                 Mês Anterior
+                 Anterior
                </button>
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => setIsNewMonthModalOpen(true)}>
+          <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto justify-end">
+            <Button variant="outline" size="sm" onClick={() => setIsNewMonthModalOpen(true)} className="flex-1 lg:flex-none text-[10px] sm:text-sm">
               <Plus size={16} />
-              Novo Mês
+              <span className="hidden xs:inline">Novo Mês</span>
+              <span className="xs:hidden">Novo</span>
             </Button>
-            <Button size="sm" onClick={handleExport}>
+            <Button size="sm" onClick={handleExport} className="flex-1 lg:flex-none text-[10px] sm:text-sm">
               <Download size={16} />
               Exportar
             </Button>
           </div>
         </header>
 
-        <div className="p-8 flex-1">
+        <div className="p-4 sm:p-6 lg:p-8 flex-1 max-w-[1920px] mx-auto w-full">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeSectorId + selectedMonthId}
@@ -1594,18 +1597,18 @@ function DevelopmentEvaluationForm({
     : Object.keys(behaveScores).length === BEHAVIORAL_QUESTIONS.length);
 
   return (
-    <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
-      <div className="flex items-center gap-2 mb-4">
-        <div className={cn("flex-1 h-2 rounded-full", step === 'date' ? "bg-[#FF6B00]" : "bg-gray-200")} />
-        <div className={cn("flex-1 h-2 rounded-full", step === 'tech' ? "bg-[#FF6B00]" : "bg-gray-200")} />
-        <div className={cn("flex-1 h-2 rounded-full", step === 'behave' ? "bg-[#FF6B00]" : "bg-gray-200")} />
+    <div className="space-y-4 sm:space-y-6 max-h-[70vh] overflow-y-auto pr-1 sm:pr-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-4">
+        <div className={cn("flex-1 h-1.5 sm:h-2 rounded-full", step === 'date' ? "bg-[#FF6B00]" : "bg-gray-200")} />
+        <div className={cn("flex-1 h-1.5 sm:h-2 rounded-full", step === 'tech' ? "bg-[#FF6B00]" : "bg-gray-200")} />
+        <div className={cn("flex-1 h-1.5 sm:h-2 rounded-full", step === 'behave' ? "bg-[#FF6B00]" : "bg-gray-200")} />
       </div>
 
       <div className="space-y-4">
         {step === 'date' && (
-          <div className="space-y-6">
-            <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
-              <p className="text-sm text-[#FF6B00] font-medium">Inicie a avaliação definindo a data do registro.</p>
+          <div className="space-y-4 sm:space-y-6">
+            <div className="bg-orange-50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-orange-100">
+              <p className="text-xs sm:text-sm text-[#FF6B00] font-medium">Inicie a avaliação definindo a data do registro.</p>
             </div>
             <Input 
               label="Data da Avaliação" 
@@ -1618,15 +1621,15 @@ function DevelopmentEvaluationForm({
 
         {step !== 'date' && (
           <>
-            <h4 className="font-bold text-gray-900 flex items-center gap-2">
-              {step === 'tech' ? <Target className="text-[#FF6B00]" /> : <Users className="text-[#FF6B00]" />}
+            <h4 className="font-bold text-gray-900 flex items-center gap-2 text-sm sm:text-base">
+              {step === 'tech' ? <Target size={18} className="text-[#FF6B00]" /> : <Users size={18} className="text-[#FF6B00]" />}
               {step === 'tech' ? 'Skill Técnico' : 'Vontade Comportamental'}
             </h4>
             
             {(step === 'tech' ? TECHNICAL_QUESTIONS : BEHAVIORAL_QUESTIONS).map((q, idx) => (
-              <div key={q} className="p-4 bg-gray-50 rounded-2xl space-y-3">
-                <p className="text-sm font-medium text-gray-700">{q}</p>
-                <div className="flex gap-2">
+              <div key={q} className="p-3 sm:p-4 bg-gray-50 rounded-xl sm:rounded-2xl space-y-3">
+                <p className="text-xs sm:text-sm font-medium text-gray-700">{q}</p>
+                <div className="flex gap-1.5 sm:gap-2">
                   {[1, 2, 3, 4].map(score => (
                     <button
                       key={score}
@@ -1636,7 +1639,7 @@ function DevelopmentEvaluationForm({
                         else setBehaveScores({ ...behaveScores, [q]: score });
                       }}
                       className={cn(
-                        "flex-1 py-2 rounded-xl text-xs font-bold transition-all",
+                        "flex-1 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold transition-all",
                         (step === 'tech' ? techScores[q] : behaveScores[q]) === score
                           ? "bg-[#FF6B00] text-white shadow-lg shadow-orange-200"
                           : "bg-white text-gray-400 border border-gray-100 hover:border-orange-200"
@@ -1652,12 +1655,14 @@ function DevelopmentEvaluationForm({
         )}
       </div>
 
-      <div className="flex justify-between pt-4 sticky bottom-0 bg-white pb-2">
-        <Button variant="outline" onClick={step === 'date' ? onCancel : (step === 'tech' ? () => setStep('date') : () => setStep('tech'))}>
+      <div className="flex justify-between gap-3 pt-4 sticky bottom-0 bg-white pb-1">
+        <Button variant="outline" onClick={step === 'date' ? onCancel : (step === 'tech' ? () => setStep('date') : () => setStep('tech'))} size="sm" className="flex-1 sm:flex-none">
           {step === 'date' ? 'Cancelar' : 'Voltar'}
         </Button>
         <Button 
+          size="sm"
           disabled={!isStepComplete}
+          className="flex-1 sm:flex-none"
           onClick={async () => {
             if (step === 'date') setStep('tech');
             else if (step === 'tech') setStep('behave');
@@ -1676,7 +1681,7 @@ function DevelopmentEvaluationForm({
             }
           }}
         >
-          {step === 'behave' ? 'Finalizar Avaliação' : 'Próximo'}
+          {step === 'behave' ? 'Finalizar' : 'Próximo'}
         </Button>
       </div>
     </div>
@@ -1765,36 +1770,38 @@ function SectorDashboard({
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-end justify-between">
+    <div className="space-y-6 sm:space-y-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-3 h-8 rounded-full" style={{ backgroundColor: sector.color }} />
-            <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter">{sector.name}</h2>
+            <div className="w-2 sm:w-3 h-6 sm:h-8 rounded-full" style={{ backgroundColor: sector.color }} />
+            <h2 className="text-xl sm:text-3xl font-black text-gray-900 uppercase tracking-tighter">{sector.name}</h2>
           </div>
-          <p className="text-gray-500 font-medium">Gestão de indicadores e performance individual da equipe.</p>
+          <p className="text-xs sm:text-sm text-gray-500 font-medium">Gestão de indicadores e performance individual da equipe.</p>
         </div>
-        <div className="flex gap-3">
-          <Button variant="outline" onClick={onAddIndicator}>
-            <Settings size={18} />
-            Configurar Indicadores
+        <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+          <Button variant="outline" onClick={onAddIndicator} className="flex-1 sm:flex-none text-[10px] sm:text-sm px-2 sm:px-4">
+            <Settings size={16} />
+            <span className="hidden xs:inline">Configurar Indicadores</span>
+            <span className="xs:hidden">KPIs</span>
           </Button>
-          <Button onClick={onAddCollaborator}>
-            <Plus size={18} />
-            Novo Colaborador
+          <Button onClick={onAddCollaborator} className="flex-1 sm:flex-none text-[10px] sm:text-sm px-2 sm:px-4">
+            <Plus size={16} />
+            <span className="hidden xs:inline">Novo Colaborador</span>
+            <span className="xs:hidden">Novo</span>
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-        <div className="xl:col-span-3">
-          <div className="bg-white rounded-[2rem] border border-gray-100 shadow-2xl shadow-gray-200/50 overflow-hidden">
-            <div className="overflow-x-auto max-h-[700px] scrollbar-thin scrollbar-thumb-gray-200">
-              <table className="w-full border-collapse table-fixed">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 sm:gap-8">
+        <div className="lg:col-span-3">
+          <div className="bg-white rounded-2xl sm:rounded-[2rem] border border-gray-100 shadow-xl sm:shadow-2xl shadow-gray-200/50 overflow-hidden">
+            <div className="overflow-x-auto max-h-[500px] sm:max-h-[700px] scrollbar-thin scrollbar-thumb-gray-200">
+              <table className="w-full border-collapse">
                 <thead className="sticky top-0 z-30">
                   <tr className="text-white shadow-md" style={{ backgroundColor: sector.color }}>
-                    <th className="p-6 text-left border-r border-white/10 w-[240px] sticky left-0 z-40" style={{ backgroundColor: sector.color }}>
-                      <span className="text-xs font-black uppercase tracking-widest opacity-80">Indicador</span>
+                    <th className="p-3 sm:p-6 text-left border-r border-white/10 w-[140px] sm:w-[240px] sticky left-0 z-40" style={{ backgroundColor: sector.color }}>
+                      <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest opacity-80">Indicador</span>
                     </th>
                     {collaborators.map(c => {
                       const evalData = evaluations.find(e => e.collaboratorId === c.id && e.monthId === monthId);
@@ -1811,14 +1818,14 @@ function SectorDashboard({
                       const isHighlight = sectorHighlights.find(h => h.sectorId === sector.id && h.monthId === monthId && h.collaboratorId === c.id);
 
                       return (
-                        <th key={c.id} className="p-6 border-r border-white/10 min-w-[160px] group relative overflow-hidden">
+                        <th key={c.id} className="p-3 sm:p-6 border-r border-white/10 min-w-[120px] sm:min-w-[160px] group relative overflow-hidden">
                           <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-30" />
-                          <div className="relative z-10 flex flex-col items-center gap-3">
+                          <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3">
                             <div className="relative">
                               <img 
                                 src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
                                 alt={c.name} 
-                                className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-white/10 object-cover aspect-square shadow-lg transition-transform group-hover:scale-105"
+                                className="w-10 h-10 sm:w-16 h-16 rounded-xl sm:rounded-2xl border-2 sm:border-4 border-white/20 bg-white/10 object-cover aspect-square shadow-lg transition-transform group-hover:scale-105"
                                 referrerPolicy="no-referrer"
                               />
                               <div className="flex gap-1 absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1888,9 +1895,9 @@ function SectorDashboard({
                         </th>
                       );
                     })}
-                    <th className="p-6 min-w-[140px] sticky right-0 z-40 shadow-[-4px_0_8px_rgba(0,0,0,0.05)]" style={{ backgroundColor: sector.color, filter: 'brightness(0.9)' }}>
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
+                    <th className="p-3 sm:p-6 min-w-[100px] sm:min-w-[140px] sticky right-0 z-40 shadow-[-4px_0_8px_rgba(0,0,0,0.05)]" style={{ backgroundColor: sector.color, filter: 'brightness(0.9)' }}>
+                      <div className="flex flex-col items-center gap-1 sm:gap-2">
+                        <div className="w-8 h-8 sm:w-12 h-12 rounded-lg sm:rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
                           {(() => {
                             const Icon = {
                               Calendar,
@@ -1899,10 +1906,10 @@ function SectorDashboard({
                               Heart,
                               MessageSquare
                             }[sector.icon || ''] || LayoutDashboard;
-                            return <Icon size={24} />;
+                            return <Icon size={window.innerWidth < 640 ? 16 : 24} />;
                           })()}
                         </div>
-                        <span className="text-xs font-black uppercase tracking-widest">Setor</span>
+                        <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest">Setor</span>
                       </div>
                     </th>
                   </tr>
@@ -1925,9 +1932,9 @@ function SectorDashboard({
                     
                     return (
                       <tr key={indicator.id} className={cn("transition-colors group", isSectorOnly ? "bg-gray-50/50" : "hover:bg-gray-50/80")}>
-                        <td className="p-5 border-r border-gray-100 bg-white sticky left-0 z-20 group-hover:bg-gray-50 transition-colors">
+                        <td className="p-3 sm:p-5 border-r border-gray-100 bg-white sticky left-0 z-20 group-hover:bg-gray-50 transition-colors">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-gray-700 tracking-tight">{indicator.name}</span>
+                            <span className="text-xs sm:text-sm font-bold text-gray-700 tracking-tight">{indicator.name}</span>
                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => onEditIndicator(indicator)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={12} /></button>
                               <button onClick={() => onDeleteIndicator(indicator.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={12} /></button>
@@ -1945,7 +1952,7 @@ function SectorDashboard({
                           if (isSectorOnly) {
                             return (
                               <td key={c.id} className="p-0 border-r border-gray-50 bg-gray-50/20 relative">
-                                <div className="w-full h-full p-5 flex items-center justify-center text-gray-300 font-mono">
+                                <div className="w-full h-full p-3 sm:p-5 flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm">
                                   -
                                 </div>
                               </td>
@@ -1958,7 +1965,7 @@ function SectorDashboard({
                               <input 
                                 type="text"
                                 className={cn(
-                                  "relative z-10 w-full h-full p-5 text-center text-sm font-mono font-bold focus:bg-white focus:outline-none transition-all",
+                                  "relative z-10 w-full h-full p-3 sm:p-5 text-center text-xs sm:text-sm font-mono font-bold focus:bg-white focus:outline-none transition-all",
                                   isNegative && Number(val) > 0 ? "text-red-600" : 
                                   isMetaMet ? "" : "text-gray-600"
                                 )}
@@ -1980,7 +1987,7 @@ function SectorDashboard({
                             type="text"
                             key={`${indicator.id}-sector-${displayValue}-${monthId}-${activeOperation}`}
                             className={cn(
-                              "w-full h-full p-5 text-center text-sm font-mono font-black focus:bg-white focus:outline-none transition-colors",
+                              "w-full h-full p-3 sm:p-5 text-center text-xs sm:text-sm font-mono font-black focus:bg-white focus:outline-none transition-colors",
                               isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : ""
                             )}
                             style={{ color: isNegative && (parseFloat(String(displayValue)) > 0) ? undefined : sector.color }}
@@ -2097,54 +2104,57 @@ function GeneralIndicatorView({
   const [newDate, setNewDate] = useState('');
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-[#FF6B00] uppercase tracking-tighter mb-1">
+          <h2 className="text-xl sm:text-3xl font-black text-[#FF6B00] uppercase tracking-tighter mb-1">
             Indicador Geral - {operation.toUpperCase()}
           </h2>
-          <p className="text-gray-500 font-medium">Acompanhamento diário consolidado por setor.</p>
+          <p className="text-xs sm:text-sm text-gray-500 font-medium">Acompanhamento diário consolidado por setor.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={onAddIndicator}>
-            <Settings size={18} />
-            Configurar Indicadores
+        <div className="flex flex-col xs:flex-row items-center gap-3 w-full sm:w-auto">
+          <Button variant="outline" onClick={onAddIndicator} className="w-full xs:w-auto text-[10px] sm:text-sm px-2 sm:px-4">
+            <Settings size={16} />
+            <span className="hidden xs:inline">Configurar Indicadores</span>
+            <span className="xs:hidden">KPIs</span>
           </Button>
-          <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-2 bg-white p-1.5 sm:p-2 rounded-xl sm:rounded-2xl border border-gray-100 shadow-sm w-full xs:w-auto">
             <input 
               type="date" 
               value={newDate}
               onChange={(e) => setNewDate(e.target.value)}
-              className="text-sm border-none focus:ring-0 cursor-pointer font-bold text-gray-900"
+              className="text-[10px] sm:text-sm border-none focus:ring-0 cursor-pointer font-bold text-gray-900 bg-transparent flex-1"
             />
             <Button 
               size="sm" 
               onClick={() => { if (newDate) { onAddDate(newDate); setNewDate(''); } }}
               disabled={!newDate}
+              className="text-[10px] sm:text-sm px-2 sm:px-3"
             >
-              <Plus size={16} />
-              Adicionar Data
+              <Plus size={14} />
+              <span className="hidden xs:inline">Adicionar Data</span>
+              <span className="xs:hidden">Add</span>
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-gray-100 shadow-2xl shadow-gray-200/50 overflow-hidden">
+      <div className="bg-white rounded-2xl sm:rounded-[2rem] border border-gray-100 shadow-xl sm:shadow-2xl shadow-gray-200/50 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-[#FF6B00] text-white">
-                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-0 z-20 bg-[#FF6B00]">Setor</th>
-                <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-[120px] z-20 bg-[#FF6B00]">Indicador</th>
+                <th className="p-3 sm:p-4 text-left text-[8px] sm:text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-0 z-20 bg-[#FF6B00] w-[80px] sm:w-[120px]">Setor</th>
+                <th className="p-3 sm:p-4 text-left text-[8px] sm:text-[10px] font-black uppercase tracking-widest border-r border-white/10 sticky left-[80px] sm:left-[120px] z-20 bg-[#FF6B00] w-[100px] sm:w-[180px]">Indicador</th>
                 {currentDates.map(od => (
-                  <th key={od.id} className="p-4 text-center text-[10px] font-black uppercase tracking-widest border-r border-white/10 min-w-[120px]">
+                  <th key={od.id} className="p-3 sm:p-4 text-center text-[8px] sm:text-[10px] font-black uppercase tracking-widest border-r border-white/10 min-w-[80px] sm:min-w-[120px]">
                     <div className="flex flex-col items-center gap-1">
                       <span>{format(parse(od.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy')}</span>
                       <button 
                         onClick={() => onDeleteDate(od.id)}
-                        className="text-red-400 hover:text-red-600 transition-colors"
+                        className="text-white/60 hover:text-white transition-colors"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={10} />
                       </button>
                     </div>
                   </th>
@@ -2158,14 +2168,14 @@ function GeneralIndicatorView({
                 if (sectorIndicators.length === 0) {
                   return (
                     <tr key={sector.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="p-4 border-r border-gray-50 font-bold text-xs text-gray-900 sticky left-0 z-10 bg-white">
+                      <td className="p-3 sm:p-4 border-r border-gray-50 font-bold text-[10px] sm:text-xs text-gray-900 sticky left-0 z-10 bg-white">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-4 rounded-full" style={{ backgroundColor: sector.color }} />
-                          {sector.name}
+                          <div className="w-1.5 sm:w-2 h-3 sm:h-4 rounded-full" style={{ backgroundColor: sector.color }} />
+                          <span className="truncate">{sector.name}</span>
                         </div>
                       </td>
-                      <td colSpan={currentDates.length + 1} className="p-4 text-center text-gray-400 text-[10px] font-medium italic">
-                        Nenhum indicador configurado. Clique em "Configurar" para adicionar.
+                      <td colSpan={currentDates.length + 1} className="p-3 sm:p-4 text-center text-gray-400 text-[8px] sm:text-[10px] font-medium italic">
+                        Nenhum indicador configurado.
                       </td>
                     </tr>
                   );
@@ -2174,14 +2184,14 @@ function GeneralIndicatorView({
                 return sectorIndicators.map((indicator, idx) => (
                   <tr key={indicator.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     {idx === 0 && (
-                      <td className="p-4 border-r border-gray-50 font-bold text-xs text-gray-900 align-top sticky left-0 z-10 bg-white" rowSpan={sectorIndicators.length}>
+                      <td className="p-3 sm:p-4 border-r border-gray-50 font-bold text-[10px] sm:text-xs text-gray-900 align-top sticky left-0 z-10 bg-white" rowSpan={sectorIndicators.length}>
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-4 rounded-full" style={{ backgroundColor: sector.color }} />
-                          {sector.name}
+                          <div className="w-1.5 sm:w-2 h-3 sm:h-4 rounded-full" style={{ backgroundColor: sector.color }} />
+                          <span className="truncate">{sector.name}</span>
                         </div>
                       </td>
                     )}
-                    <td className="p-4 border-r border-gray-50 text-xs font-medium text-gray-600 sticky left-[120px] z-10 bg-white">
+                    <td className="p-3 sm:p-4 border-r border-gray-50 text-[10px] sm:text-xs font-medium text-gray-600 sticky left-[80px] sm:left-[120px] z-10 bg-white">
                       <div className="flex items-center justify-between group/ind">
                         <span className="truncate mr-2">{indicator.name}</span>
                         <div className="flex items-center gap-1 opacity-0 group-hover/ind:opacity-100 transition-all">
@@ -2190,14 +2200,14 @@ function GeneralIndicatorView({
                             className="text-gray-400 hover:text-[#FF6B00] p-1"
                             title="Editar"
                           >
-                            <Edit2 size={12} />
+                            <Edit2 size={10} />
                           </button>
                           <button 
                             onClick={() => onDeleteIndicator(indicator.id)}
                             className="text-red-400 hover:text-red-600 p-1"
                             title="Excluir"
                           >
-                            <Trash2 size={12} />
+                            <Trash2 size={10} />
                           </button>
                         </div>
                       </div>
@@ -2216,7 +2226,7 @@ function GeneralIndicatorView({
                             type="text"
                             defaultValue={dv?.value || ''}
                             onBlur={(e) => onSaveValue(indicator.id, 'sector', e.target.value, od.date)}
-                            className="w-full h-full p-4 text-center text-xs font-mono font-bold text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:bg-orange-50/30 transition-all"
+                            className="w-full h-full p-3 sm:p-4 text-center text-[10px] sm:text-xs font-mono font-bold text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:bg-orange-50/30 transition-all"
                             placeholder="-"
                           />
                         </td>
@@ -2251,15 +2261,15 @@ function OverviewView({
   onNavigate: (id: string) => void 
 }) {
   return (
-    <div className="space-y-8">
-      <div className="flex items-end justify-between">
+    <div className="space-y-6 sm:space-y-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2">Visão Geral</h2>
-          <p className="text-gray-500 font-medium">Acompanhamento consolidado de todos os setores da empresa.</p>
+          <h2 className="text-2xl sm:text-3xl font-black text-gray-900 uppercase tracking-tighter mb-1 sm:mb-2">Visão Geral</h2>
+          <p className="text-xs sm:text-sm text-gray-500 font-medium">Acompanhamento consolidado de todos os setores da empresa.</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
         {sectors.map(sector => {
           const sectorColabs = collaborators.filter(c => c.sectorId === sector.id);
           const sectorInds = indicators.filter(i => i.sectorId === sector.id);
@@ -2267,96 +2277,99 @@ function OverviewView({
           return (
             <div key={sector.id}>
               <Card 
-                className="hover:shadow-xl transition-shadow cursor-pointer group"
+                className="hover:shadow-xl transition-shadow cursor-pointer group h-full flex flex-col"
                 onClick={() => onNavigate(sector.id)}
               >
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden bg-white/10" style={{ backgroundColor: sector.color }}>
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden bg-white/10" style={{ backgroundColor: sector.color }}>
                       {sector.logoUrl ? (
                         <img src={sector.logoUrl} alt={sector.name} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       ) : (
-                        <LayoutDashboard size={24} />
+                        <LayoutDashboard size={20} className="sm:w-6 sm:h-6" />
                       )}
                     </div>
-                    <h3 className="font-bold text-gray-900">{sector.name}</h3>
+                    <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">{sector.name}</h3>
                   </div>
-                  <ChevronRight size={18} className="text-gray-300 group-hover:text-gray-600 transition-colors" />
+                  <ChevronRight size={16} className="text-gray-300 group-hover:text-gray-600 transition-colors sm:w-[18px] sm:h-[18px]" />
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-gray-50 p-4 rounded-xl">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Equipe</p>
-                    <p className="text-xl font-black text-gray-900">{sectorColabs.length}</p>
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-auto">
+                  <div className="bg-gray-50 p-3 sm:p-4 rounded-xl">
+                    <p className="text-[8px] sm:text-[10px] font-bold text-gray-400 uppercase mb-1">Equipe</p>
+                    <p className="text-lg sm:text-xl font-black text-gray-900">{sectorColabs.length}</p>
                   </div>
-                  <div className="bg-gray-50 p-4 rounded-xl">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">KPIs</p>
-                    <p className="text-xl font-black text-gray-900">{sectorInds.length}</p>
+                  <div className="bg-gray-50 p-3 sm:p-4 rounded-xl">
+                    <p className="text-[8px] sm:text-[10px] font-bold text-gray-400 uppercase mb-1">KPIs</p>
+                    <p className="text-lg sm:text-xl font-black text-gray-900">{sectorInds.length}</p>
                   </div>
                 </div>
 
-                <div className="mt-6 pt-6 border-t border-gray-50 flex items-center justify-between">
+                <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-50 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex -space-x-2">
                     {sectorColabs.slice(0, 3).map((c, i) => (
                       <img 
                         key={c.id} 
                         src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
-                        className="w-8 h-8 rounded-lg border-2 border-white bg-gray-100 object-cover aspect-square" 
+                        className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg border-2 border-white bg-gray-100 object-cover aspect-square" 
                         alt={c.name}
                         referrerPolicy="no-referrer"
                       />
                     ))}
                     {sectorColabs.length > 3 && (
-                      <div className="w-8 h-8 rounded-lg border-2 border-white bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500">
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg border-2 border-white bg-gray-100 flex items-center justify-center text-[8px] sm:text-[10px] font-bold text-gray-500">
                         +{sectorColabs.length - 3}
                       </div>
                     )}
                   </div>
-                  {(() => {
-                    const highlight = sectorHighlights.find(h => h.sectorId === sector.id && h.monthId === monthId);
-                    const winner = highlight ? collaborators.find(c => c.id === highlight.collaboratorId) : null;
-                    
-                    if (winner) {
+                  
+                  <div className="flex flex-col items-end">
+                    {(() => {
+                      const highlight = sectorHighlights.find(h => h.sectorId === sector.id && h.monthId === monthId);
+                      const winner = highlight ? collaborators.find(c => c.id === highlight.collaboratorId) : null;
+                      
+                      if (winner) {
+                        return (
+                          <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100 mb-2">
+                            <Award size={12} className="text-yellow-600" />
+                            <span className="text-[8px] sm:text-[10px] font-bold text-yellow-700 uppercase tracking-tight truncate max-w-[80px]">{winner.name}</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {(() => {
+                      const csatInd = sectorInds.find(i => i.name.toLowerCase().includes('csat'));
+                      let csatDisplay = '-';
+                      if (csatInd) {
+                        const sectorOverride = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === 'sector');
+                        if (sectorOverride && sectorOverride.value !== undefined && sectorOverride.value !== '' && sectorOverride.value !== '-') {
+                          const valStr = String(sectorOverride.value);
+                          csatDisplay = valStr.endsWith('%') ? valStr : `${valStr}%`;
+                        } else {
+                          const colabValues = sectorColabs.map(c => {
+                            const v = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === c.id)?.value;
+                            if (v === undefined || v === '-' || v === '') return 0;
+                            const num = parseFloat(String(v).replace(',', '.'));
+                            return isNaN(num) ? 0 : num;
+                          });
+                          const total = colabValues.reduce((a, b) => a + b, 0);
+                          const avg = sectorColabs.length > 0 ? total / sectorColabs.length : 0;
+                          csatDisplay = avg > 0 ? `${avg.toFixed(1)}%` : '-';
+                        }
+                      }
                       return (
-                        <div className="flex items-center gap-2 bg-yellow-50 px-3 py-1.5 rounded-lg border border-yellow-100">
-                          <Award size={14} className="text-yellow-600" />
-                          <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-tight">{winner.name}</span>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[8px] sm:text-[10px] font-bold text-gray-400 uppercase leading-none mb-1">CSAT Médio</span>
+                          <span className="text-xs sm:text-sm font-black flex items-center gap-1" style={{ color: sector.color }}>
+                            <CheckCircle2 size={12} className="sm:w-[14px] sm:h-[14px]" />
+                            {csatDisplay}
+                          </span>
                         </div>
                       );
-                    }
-                    return null;
-                  })()}
-                  
-                  {(() => {
-                    const csatInd = sectorInds.find(i => i.name.toLowerCase().includes('csat'));
-                    let csatDisplay = '-';
-                    if (csatInd) {
-                      const sectorOverride = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === 'sector');
-                      if (sectorOverride && sectorOverride.value !== undefined && sectorOverride.value !== '' && sectorOverride.value !== '-') {
-                        const valStr = String(sectorOverride.value);
-                        csatDisplay = valStr.endsWith('%') ? valStr : `${valStr}%`;
-                      } else {
-                        const colabValues = sectorColabs.map(c => {
-                          const v = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === c.id)?.value;
-                          if (v === undefined || v === '-' || v === '') return 0;
-                          const num = parseFloat(String(v).replace(',', '.'));
-                          return isNaN(num) ? 0 : num;
-                        });
-                        const total = colabValues.reduce((a, b) => a + b, 0);
-                        const avg = sectorColabs.length > 0 ? total / sectorColabs.length : 0;
-                        csatDisplay = avg > 0 ? `${avg.toFixed(1)}%` : '-';
-                      }
-                    }
-                    return (
-                      <div className="flex flex-col items-end">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-1">CSAT Médio</span>
-                        <span className="text-sm font-black flex items-center gap-1" style={{ color: sector.color }}>
-                          <CheckCircle2 size={14} />
-                          {csatDisplay}
-                        </span>
-                      </div>
-                    );
-                  })()}
+                    })()}
+                  </div>
                 </div>
               </Card>
             </div>
@@ -2374,7 +2387,7 @@ function NewMonthForm({ months, onSubmit, onCancel }: { months: Month[], onSubmi
   const [copyFromId, setCopyFromId] = useState('');
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(name, copyFromId); }} className="space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(name, copyFromId); }} className="space-y-4 sm:space-y-6">
       <Input 
         label="Nome do Mês (MM/YYYY)" 
         value={name} 
@@ -2390,9 +2403,9 @@ function NewMonthForm({ months, onSubmit, onCancel }: { months: Month[], onSubmi
           ...months.map(m => ({ value: m.id, label: m.name }))
         ]}
       />
-      <div className="flex justify-end gap-3 pt-4">
-        <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit">Criar Mês</Button>
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
+        <Button variant="outline" type="button" onClick={onCancel} className="w-full sm:w-auto">Cancelar</Button>
+        <Button type="submit" className="w-full sm:w-auto">Criar Mês</Button>
       </div>
     </form>
   );
@@ -2402,21 +2415,21 @@ function EditMonthForm({ month, onSubmit, onDelete, onCancel }: { month: Month, 
   const [name, setName] = useState(month.name);
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(name); }} className="space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(name); }} className="space-y-4 sm:space-y-6">
       <Input 
         label="Nome do Mês (MM/YYYY)" 
         value={name} 
         onChange={(e) => setName(e.target.value)} 
         required 
       />
-      <div className="flex justify-between items-center pt-4">
-        <Button variant="danger" type="button" onClick={onDelete} size="sm">
+      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 pt-4">
+        <Button variant="danger" type="button" onClick={onDelete} size="sm" className="w-full sm:w-auto">
           <Trash2 size={14} />
           Excluir Mês
         </Button>
-        <div className="flex gap-3">
-          <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
-          <Button type="submit">Salvar Alterações</Button>
+        <div className="flex flex-col-reverse sm:flex-row gap-3">
+          <Button variant="outline" type="button" onClick={onCancel} className="w-full sm:w-auto">Cancelar</Button>
+          <Button type="submit" className="w-full sm:w-auto">Salvar Alterações</Button>
         </div>
       </div>
     </form>
@@ -2429,19 +2442,21 @@ function CollaboratorForm({ initialData, onSubmit, onDelete, onCancel }: { initi
   const [meta, setMeta] = useState(initialData?.meta?.toString() || '');
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, avatarUrl, meta: Number(meta) }); }} className="space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, avatarUrl, meta: Number(meta) }); }} className="space-y-4 sm:space-y-6">
       <Input label="Nome Completo" value={name} onChange={(e) => setName(e.target.value)} required />
       <Input label="URL da Imagem / Avatar" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
       <Input label="Meta Individual" type="number" value={meta} onChange={(e) => setMeta(e.target.value)} />
-      <div className="flex justify-end gap-3 pt-4">
+      <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
         {initialData && onDelete && (
-          <Button variant="destructive" type="button" onClick={onDelete} className="mr-auto">
+          <Button variant="destructive" type="button" onClick={onDelete} className="w-full sm:w-auto sm:mr-auto">
             <Trash2 size={18} className="mr-2" />
             Excluir
           </Button>
         )}
-        <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit">{initialData ? 'Salvar Alterações' : 'Adicionar Colaborador'}</Button>
+        <div className="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
+          <Button variant="outline" type="button" onClick={onCancel} className="w-full sm:w-auto">Cancelar</Button>
+          <Button type="submit" className="w-full sm:w-auto">{initialData ? 'Salvar Alterações' : 'Adicionar Colaborador'}</Button>
+        </div>
       </div>
     </form>
   );
@@ -2466,7 +2481,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
         metaSittax: metaSittax ? parseFloat(metaSittax) : undefined,
         metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined
       }); 
-    }} className="space-y-6">
+    }} className="space-y-4 sm:space-y-6">
       {showSectorSelect && (
         <Select 
           label="Setor" 
@@ -2487,7 +2502,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
           { value: 'time', label: 'Tempo (hh:mm:ss)' },
         ]}
       />
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input 
           label="Meta Sittax" 
           type="number" 
@@ -2514,14 +2529,14 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
             onChange={(e) => setIsSectorOnly(e.target.checked)}
             className="w-4 h-4 text-[#FF6B00] border-gray-300 rounded focus:ring-[#FF6B00] cursor-pointer"
           />
-          <label htmlFor="isSectorOnly" className="text-sm font-bold text-gray-700 cursor-pointer select-none">
+          <label htmlFor="isSectorOnly" className="text-xs sm:text-sm font-bold text-gray-700 cursor-pointer select-none">
             Indicador apenas do setor (não pertence a colaboradores)
           </label>
         </div>
       )}
-      <div className="flex justify-end gap-3 pt-4">
-        <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit">{initialData ? 'Salvar Alterações' : 'Adicionar Indicador'}</Button>
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
+        <Button variant="outline" type="button" onClick={onCancel} className="w-full sm:w-auto">Cancelar</Button>
+        <Button type="submit" className="w-full sm:w-auto">{initialData ? 'Salvar Alterações' : 'Adicionar Indicador'}</Button>
       </div>
     </form>
   );
@@ -2532,12 +2547,12 @@ function SectorForm({ initialData, onSubmit, onCancel }: { initialData?: Sector,
   const [logoUrl, setLogoUrl] = useState(initialData?.logoUrl || '');
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, logoUrl }); }} className="space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, logoUrl }); }} className="space-y-4 sm:space-y-6">
       <Input label="Nome do Setor" value={name} onChange={(e) => setName(e.target.value)} required />
       <Input label="URL do Brasão / Logo" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://..." />
-      <div className="flex justify-end gap-3 pt-4">
-        <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit">Salvar Alterações</Button>
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
+        <Button variant="outline" type="button" onClick={onCancel} className="w-full sm:w-auto">Cancelar</Button>
+        <Button type="submit" className="w-full sm:w-auto">Salvar Alterações</Button>
       </div>
     </form>
   );
