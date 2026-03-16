@@ -786,7 +786,7 @@ export default function App() {
     }
 
     // Matrix export for specific sector
-    if (activeSectorId !== 'overview') {
+    if (activeSectorId !== 'overview' && !activeSectorId.startsWith('general')) {
       const sector = SECTORS.find(s => s.id === activeSectorId);
       const sectorIndicators = indicators.filter(i => i.sectorId === activeSectorId);
       const sectorCollaborators = collaborators.filter(c => c.sectorId === activeSectorId);
@@ -810,6 +810,56 @@ export default function App() {
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `sittax_${sector?.name.toLowerCase() || 'performance'}_${selectedMonth.name.replace('/', '-')}.csv`;
+      link.click();
+      return;
+    }
+
+    // Case for General Indicator View
+    if (activeSectorId.startsWith('general')) {
+      const operation = activeOperation;
+      const currentDates = operationDates
+        .filter(od => od.monthId === selectedMonthId && od.operation === operation)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      const headers = ['Setor', 'Indicador', ...currentDates.map(od => format(parse(od.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy'))];
+      
+      const rows: string[][] = [];
+      
+      SECTORS.forEach(sector => {
+        const sectorIndicators = indicators.filter(i => 
+          i.sectorId === sector.id && 
+          i.isGeneral !== false && 
+          (i.operation === operation || i.operation === 'both' || !i.operation)
+        );
+        
+        sectorIndicators.forEach(indicator => {
+          const row = [
+            sector.name,
+            indicator.name,
+            ...currentDates.map(od => {
+              const dv = dataValues.find(d => 
+                d.indicatorId === indicator.id && 
+                d.collaboratorId === 'sector' && 
+                d.monthId === selectedMonthId && 
+                d.operation === operation &&
+                d.date === od.date
+              );
+              return dv?.value !== undefined ? formatValue(dv.value, indicator.type) : '-';
+            })
+          ];
+          rows.push(row);
+        });
+      });
+
+      const csvContent = [
+        headers.join(';'),
+        ...rows.map(r => r.join(';'))
+      ].join('\n');
+
+      const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `sittax_indicador_geral_${operation}_${selectedMonth.name.replace('/', '-')}.csv`;
       link.click();
       return;
     }
