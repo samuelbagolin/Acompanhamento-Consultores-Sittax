@@ -1107,31 +1107,6 @@ export default function App() {
                  Anterior
                </button>
             </div>
-
-            <div className="flex bg-gray-50 p-1 rounded-lg ml-2">
-               <button 
-                 onClick={() => setActiveOperation('sittax')}
-                 className={cn(
-                   "px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-all",
-                   activeOperation === 'sittax'
-                    ? "text-white bg-[#FF6B00] shadow-sm" 
-                    : "text-gray-400 hover:text-gray-600"
-                 )}
-               >
-                 Sittax
-               </button>
-               <button 
-                 onClick={() => setActiveOperation('openix')}
-                 className={cn(
-                   "px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-all",
-                   activeOperation === 'openix'
-                    ? "text-white bg-[#FF6B00] shadow-sm" 
-                    : "text-gray-400 hover:text-gray-600"
-                 )}
-               >
-                 Openix
-               </button>
-            </div>
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto justify-end">
@@ -1288,10 +1263,13 @@ export default function App() {
         title={editingIndicator ? "Editar Indicador" : "Novo Indicador"}
       >
         <IndicatorForm 
-          initialData={editingIndicator || { operation: activeOperation } as Indicator}
+          initialData={editingIndicator || { 
+            operation: activeSectorId.startsWith('general') ? activeOperation : 'sector' 
+          } as any}
           onSubmit={handleAddIndicator}
           onCancel={() => { setIsIndicatorModalOpen(false); setEditingIndicator(null); }}
           showSectorSelect={activeSectorId.startsWith('general')}
+          sectorName={!activeSectorId.startsWith('general') ? activeSector.name : undefined}
         />
       </Modal>
 
@@ -2498,14 +2476,16 @@ function CollaboratorForm({ initialData, onSubmit, onDelete, onCancel }: { initi
   );
 }
 
-function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = false }: { initialData?: Indicator, onSubmit: (data: Partial<Indicator>) => void, onCancel: () => void, showSectorSelect?: boolean }) {
+function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = false, sectorName }: { initialData?: Indicator, onSubmit: (data: Partial<Indicator>) => void, onCancel: () => void, showSectorSelect?: boolean, sectorName?: string }) {
   const [name, setName] = useState(initialData?.name || '');
   const [type, setType] = useState<IndicatorType>(initialData?.type || 'number');
   const [sectorId, setSectorId] = useState(initialData?.sectorId || SECTORS[0].id);
   const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || showSectorSelect);
   const [metaSittax, setMetaSittax] = useState(initialData?.metaSittax?.toString() || '');
   const [metaOpenix, setMetaOpenix] = useState(initialData?.metaOpenix?.toString() || '');
-  const [operation, setOperation] = useState<'sittax' | 'openix' | 'both'>(initialData?.operation || 'both');
+  const [operation, setOperation] = useState<'sittax' | 'openix' | 'both' | 'sector'>(
+    initialData?.operation === 'both' && initialData?.isGeneral === false ? 'sector' : (initialData?.operation as any) || 'both'
+  );
 
   return (
     <form onSubmit={(e) => { 
@@ -2517,7 +2497,8 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
         isSectorOnly,
         metaSittax: metaSittax ? parseFloat(metaSittax) : undefined,
         metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined,
-        operation
+        operation: operation === 'sector' ? 'both' : operation as any,
+        isGeneral: operation === 'sector' ? false : undefined
       }); 
     }} className="space-y-4 sm:space-y-6">
       {showSectorSelect && (
@@ -2549,6 +2530,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
             { value: 'both', label: 'Ambas (Sittax e Openix)' },
             { value: 'sittax', label: 'Apenas Sittax' },
             { value: 'openix', label: 'Apenas Openix' },
+            ...(sectorName ? [{ value: 'sector', label: `Apenas ${sectorName}` }] : [])
           ]}
         />
       </div>
