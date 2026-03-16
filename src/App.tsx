@@ -668,6 +668,7 @@ export default function App() {
           const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === m.id);
           const ref = doc(collection(db, 'indicators'));
           batch.set(ref, {
+            operation: activeOperation,
             ...cleanData,
             monthId: m.id,
             sectorId: targetSectorId,
@@ -680,10 +681,12 @@ export default function App() {
       } else {
         const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === selectedMonthId);
         await addDoc(collection(db, 'indicators'), {
+          operation: activeOperation,
           ...cleanData,
           monthId: selectedMonthId,
           sectorId: targetSectorId,
-          order: sectorIndicators.length
+          order: sectorIndicators.length,
+          isGeneral: false
         });
       }
     }
@@ -1104,6 +1107,31 @@ export default function App() {
                  Anterior
                </button>
             </div>
+
+            <div className="flex bg-gray-50 p-1 rounded-lg ml-2">
+               <button 
+                 onClick={() => setActiveOperation('sittax')}
+                 className={cn(
+                   "px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-all",
+                   activeOperation === 'sittax'
+                    ? "text-white bg-[#FF6B00] shadow-sm" 
+                    : "text-gray-400 hover:text-gray-600"
+                 )}
+               >
+                 Sittax
+               </button>
+               <button 
+                 onClick={() => setActiveOperation('openix')}
+                 className={cn(
+                   "px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-all",
+                   activeOperation === 'openix'
+                    ? "text-white bg-[#FF6B00] shadow-sm" 
+                    : "text-gray-400 hover:text-gray-600"
+                 )}
+               >
+                 Openix
+               </button>
+            </div>
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto justify-end">
@@ -1188,7 +1216,11 @@ export default function App() {
                   sector={activeSector}
                   activeOperation={activeOperation}
                   monthId={selectedMonthId}
-                  indicators={indicators.filter(i => i.sectorId === activeSectorId && !i.isGeneral)}
+                  indicators={indicators.filter(i => 
+                    i.sectorId === activeSectorId && 
+                    !i.isGeneral && 
+                    (i.operation === activeOperation || i.operation === 'both' || !i.operation)
+                  )}
                   collaborators={collaborators.filter(c => c.sectorId === activeSectorId)}
                   dataValues={dataValues}
                   evaluations={evaluations}
@@ -1256,7 +1288,7 @@ export default function App() {
         title={editingIndicator ? "Editar Indicador" : "Novo Indicador"}
       >
         <IndicatorForm 
-          initialData={editingIndicator || undefined}
+          initialData={editingIndicator || { operation: activeOperation } as Indicator}
           onSubmit={handleAddIndicator}
           onCancel={() => { setIsIndicatorModalOpen(false); setEditingIndicator(null); }}
           showSectorSelect={activeSectorId.startsWith('general')}
@@ -2163,7 +2195,11 @@ function GeneralIndicatorView({
             </thead>
             <tbody>
               {SECTORS.map(sector => {
-                const sectorIndicators = indicators.filter(i => i.sectorId === sector.id);
+                const sectorIndicators = indicators.filter(i => 
+                  i.sectorId === sector.id && 
+                  i.isGeneral !== false && 
+                  (i.operation === operation || i.operation === 'both' || !i.operation)
+                );
                 
                 if (sectorIndicators.length === 0) {
                   return (
@@ -2469,6 +2505,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
   const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || showSectorSelect);
   const [metaSittax, setMetaSittax] = useState(initialData?.metaSittax?.toString() || '');
   const [metaOpenix, setMetaOpenix] = useState(initialData?.metaOpenix?.toString() || '');
+  const [operation, setOperation] = useState<'sittax' | 'openix' | 'both'>(initialData?.operation || 'both');
 
   return (
     <form onSubmit={(e) => { 
@@ -2479,7 +2516,8 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
         sectorId: showSectorSelect ? sectorId : undefined,
         isSectorOnly,
         metaSittax: metaSittax ? parseFloat(metaSittax) : undefined,
-        metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined
+        metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined,
+        operation
       }); 
     }} className="space-y-4 sm:space-y-6">
       {showSectorSelect && (
@@ -2491,17 +2529,29 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
         />
       )}
       <Input label="Nome do Indicador" value={name} onChange={(e) => setName(e.target.value)} required />
-      <Select 
-        label="Tipo de Dado" 
-        value={type}
-        onChange={(e) => setType(e.target.value as IndicatorType)}
-        options={[
-          { value: 'number', label: 'Numérico' },
-          { value: 'percentage', label: 'Percentual (%)' },
-          { value: 'currency', label: 'Valor em R$' },
-          { value: 'time', label: 'Tempo (hh:mm:ss)' },
-        ]}
-      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Select 
+          label="Tipo de Dado" 
+          value={type}
+          onChange={(e) => setType(e.target.value as IndicatorType)}
+          options={[
+            { value: 'number', label: 'Numérico' },
+            { value: 'percentage', label: 'Percentual (%)' },
+            { value: 'currency', label: 'Valor em R$' },
+            { value: 'time', label: 'Tempo (hh:mm:ss)' },
+          ]}
+        />
+        <Select 
+          label="Operação" 
+          value={operation}
+          onChange={(e) => setOperation(e.target.value as any)}
+          options={[
+            { value: 'both', label: 'Ambas (Sittax e Openix)' },
+            { value: 'sittax', label: 'Apenas Sittax' },
+            { value: 'openix', label: 'Apenas Openix' },
+          ]}
+        />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input 
           label="Meta Sittax" 

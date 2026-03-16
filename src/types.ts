@@ -34,6 +34,7 @@ export interface Indicator {
   isGeneral?: boolean;
   metaSittax?: number;
   metaOpenix?: number;
+  operation?: 'sittax' | 'openix' | 'both';
 }
 
 export interface DataValue {
