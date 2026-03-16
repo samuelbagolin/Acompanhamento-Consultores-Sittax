@@ -671,7 +671,9 @@ export default function App() {
             ...cleanData,
             monthId: m.id,
             sectorId: targetSectorId,
-            order: sectorIndicators.length
+            order: sectorIndicators.length,
+            isGeneral: true,
+            isSectorOnly: true
           });
         }
         await batch.commit();
@@ -1183,7 +1185,7 @@ export default function App() {
                   sector={activeSector}
                   activeOperation={activeOperation}
                   monthId={selectedMonthId}
-                  indicators={indicators.filter(i => i.sectorId === activeSectorId)}
+                  indicators={indicators.filter(i => i.sectorId === activeSectorId && !i.isGeneral)}
                   collaborators={collaborators.filter(c => c.sectorId === activeSectorId)}
                   dataValues={dataValues}
                   evaluations={evaluations}
@@ -2449,7 +2451,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
   const [name, setName] = useState(initialData?.name || '');
   const [type, setType] = useState<IndicatorType>(initialData?.type || 'number');
   const [sectorId, setSectorId] = useState(initialData?.sectorId || SECTORS[0].id);
-  const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || false);
+  const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || showSectorSelect);
   const [metaSittax, setMetaSittax] = useState(initialData?.metaSittax?.toString() || '');
   const [metaOpenix, setMetaOpenix] = useState(initialData?.metaOpenix?.toString() || '');
 
@@ -2503,18 +2505,20 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
           placeholder="Ex: 95"
         />
       </div>
-      <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
-        <input 
-          type="checkbox" 
-          id="isSectorOnly" 
-          checked={isSectorOnly} 
-          onChange={(e) => setIsSectorOnly(e.target.checked)}
-          className="w-4 h-4 text-[#FF6B00] border-gray-300 rounded focus:ring-[#FF6B00] cursor-pointer"
-        />
-        <label htmlFor="isSectorOnly" className="text-sm font-bold text-gray-700 cursor-pointer select-none">
-          Indicador apenas do setor (não pertence a colaboradores)
-        </label>
-      </div>
+      {!showSectorSelect && (
+        <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
+          <input 
+            type="checkbox" 
+            id="isSectorOnly" 
+            checked={isSectorOnly} 
+            onChange={(e) => setIsSectorOnly(e.target.checked)}
+            className="w-4 h-4 text-[#FF6B00] border-gray-300 rounded focus:ring-[#FF6B00] cursor-pointer"
+          />
+          <label htmlFor="isSectorOnly" className="text-sm font-bold text-gray-700 cursor-pointer select-none">
+            Indicador apenas do setor (não pertence a colaboradores)
+          </label>
+        </div>
+      )}
       <div className="flex justify-end gap-3 pt-4">
         <Button variant="outline" type="button" onClick={onCancel}>Cancelar</Button>
         <Button type="submit">{initialData ? 'Salvar Alterações' : 'Adicionar Indicador'}</Button>

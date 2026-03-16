@@ -31,6 +31,7 @@ export interface Indicator {
   type: IndicatorType;
   order: number;
   isSectorOnly?: boolean;
+  isGeneral?: boolean;
   metaSittax?: number;
   metaOpenix?: number;
 }
