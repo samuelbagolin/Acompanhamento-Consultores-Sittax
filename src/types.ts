@@ -43,14 +43,14 @@ export interface DataValue {
   indicatorId: string;
   collaboratorId: string; // Can be 'sector' for the sector total if manual, but usually calculated
   value: number | string;
-  operation?: 'sittax' | 'openix';
+  operation?: 'sittax' | 'openix' | 'both';
   date?: string; // YYYY-MM-DD
 }
 
 export interface OperationDate {
   id: string;
   monthId: string;
-  operation: 'sittax' | 'openix';
+  operation: 'sittax' | 'openix' | 'both';
   date: string; // YYYY-MM-DD
 }
 

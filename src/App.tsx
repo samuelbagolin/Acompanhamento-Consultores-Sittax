@@ -107,6 +107,16 @@ const formatValue = (val: any, type: IndicatorType) => {
   return num.toLocaleString('pt-BR');
 };
 
+const normalizeId = (id: string) => id.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+const normalizeDate = (d: string) => {
+  if (!d) return '';
+  if (d.includes('-')) return d; // already YYYY-MM-DD
+  const parts = d.split('/');
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return d;
+};
+
 // --- Components ---
 
 const Button = ({ 
@@ -307,7 +317,9 @@ export default function App() {
   }, []);
 
   const fetchOperationDates = async () => {
-    const snapshot = await getDocs(collection(db, 'operationDates'));
+    if (!selectedMonthId) return;
+    const q = query(collection(db, 'operationDates'), where('monthId', '==', selectedMonthId));
+    const snapshot = await getDocs(q);
     setOperationDates(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as OperationDate)));
   };
 
@@ -439,17 +451,37 @@ export default function App() {
   };
 
   const fetchMonthData = async (monthId: string) => {
-    const [colSnap, indSnap, valSnap, highSnap] = await Promise.all([
-      getDocs(query(collection(db, 'collaborators'), where('monthId', '==', monthId))),
-      getDocs(query(collection(db, 'indicators'), where('monthId', '==', monthId))),
-      getDocs(query(collection(db, 'dataValues'), where('monthId', '==', monthId))),
-      getDocs(query(collection(db, 'sectorHighlights'), where('monthId', '==', monthId)))
-    ]);
+    try {
+      const [colSnap, indSnap, valSnap, highSnap, dateSnap] = await Promise.all([
+        getDocs(query(collection(db, 'collaborators'), where('monthId', '==', monthId))),
+        getDocs(query(collection(db, 'indicators'), where('monthId', '==', monthId))),
+        getDocs(query(collection(db, 'dataValues'), where('monthId', '==', monthId))),
+        getDocs(query(collection(db, 'sectorHighlights'), where('monthId', '==', monthId))),
+        getDocs(query(collection(db, 'operationDates'), where('monthId', '==', monthId)))
+      ]);
 
-    setCollaborators(colSnap.docs.map(d => ({ id: d.id, ...d.data() } as Collaborator)));
-    setIndicators(indSnap.docs.map(d => ({ id: d.id, ...d.data() } as Indicator)).sort((a, b) => a.order - b.order));
-    setDataValues(valSnap.docs.map(d => ({ id: d.id, ...d.data() } as DataValue)));
-    setSectorHighlights(highSnap.docs.map(d => ({ id: d.id, ...d.data() } as SectorHighlight)));
+      const cols = colSnap.docs.map(d => ({ id: d.id, ...d.data() } as Collaborator));
+      const inds = indSnap.docs.map(d => ({ id: d.id, ...d.data() } as Indicator)).sort((a, b) => a.order - b.order);
+      const vals = valSnap.docs.map(d => ({ id: d.id, ...d.data() } as DataValue));
+      const highs = highSnap.docs.map(d => ({ id: d.id, ...d.data() } as SectorHighlight));
+      const dates = dateSnap.docs.map(d => ({ id: d.id, ...d.data() } as OperationDate));
+
+      setCollaborators(cols);
+      setIndicators(inds);
+      setDataValues(vals);
+      setSectorHighlights(highs);
+      setOperationDates(dates);
+      
+      console.log(`Fetched data for month ${monthId}:`, {
+        collaborators: cols.length,
+        indicators: inds.length,
+        dataValues: vals.length,
+        highlights: highs.length,
+        dates: dates.length
+      });
+    } catch (error) {
+      console.error('Error fetching month data:', error);
+    }
   };
 
   const handleCreateMonth = async (name: string, copyFromId?: string) => {
@@ -668,7 +700,6 @@ export default function App() {
           const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === m.id);
           const ref = doc(collection(db, 'indicators'));
           batch.set(ref, {
-            operation: activeOperation,
             ...cleanData,
             monthId: m.id,
             sectorId: targetSectorId,
@@ -681,7 +712,6 @@ export default function App() {
       } else {
         const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === selectedMonthId);
         await addDoc(collection(db, 'indicators'), {
-          operation: activeOperation,
           ...cleanData,
           monthId: selectedMonthId,
           sectorId: targetSectorId,
@@ -788,16 +818,24 @@ export default function App() {
     // Matrix export for specific sector
     if (activeSectorId !== 'overview' && !activeSectorId.startsWith('general')) {
       const sector = SECTORS.find(s => s.id === activeSectorId);
-      const sectorIndicators = indicators.filter(i => i.sectorId === activeSectorId);
-      const sectorCollaborators = collaborators.filter(c => c.sectorId === activeSectorId);
+      const sectorIndicators = indicators.filter(i => normalizeId(i.sectorId) === normalizeId(activeSectorId));
+      const sectorCollaborators = collaborators.filter(c => normalizeId(c.sectorId) === normalizeId(activeSectorId));
       
       const headers = ['Indicador', ...sectorCollaborators.map(c => c.name), 'Total Setor'];
       const rows = sectorIndicators.map(ind => {
         const colValues = sectorCollaborators.map(c => {
-          const val = dataValues.find(dv => dv.indicatorId === ind.id && dv.collaboratorId === c.id)?.value;
+          const val = dataValues.find(dv => 
+            dv.indicatorId === ind.id && 
+            dv.collaboratorId === c.id && 
+            (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation)
+          )?.value;
           return formatValue(val, ind.type);
         });
-        const sectorVal = dataValues.find(dv => dv.indicatorId === ind.id && dv.collaboratorId === 'sector')?.value;
+        const sectorVal = dataValues.find(dv => 
+          dv.indicatorId === ind.id && 
+          dv.collaboratorId === 'sector' &&
+          (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation)
+        )?.value;
         return [ind.name, ...colValues, sectorVal !== undefined ? formatValue(sectorVal, ind.type) : '-'];
       });
 
@@ -840,9 +878,8 @@ export default function App() {
               const dv = dataValues.find(d => 
                 d.indicatorId === indicator.id && 
                 d.collaboratorId === 'sector' && 
-                d.monthId === selectedMonthId && 
-                d.operation === operation &&
-                d.date === od.date
+                (d.operation === operation || d.operation === 'both' || !d.operation) &&
+                normalizeDate(d.date || '') === normalizeDate(od.date)
               );
               return dv?.value !== undefined ? formatValue(dv.value, indicator.type) : '-';
             })
@@ -1189,6 +1226,7 @@ export default function App() {
                   collaborators={collaborators} 
                   sectorHighlights={sectorHighlights}
                   monthId={selectedMonthId}
+                  activeOperation={activeOperation}
                   onNavigate={setActiveSectorId}
                 />
               ) : activeSectorId === 'development' ? (
@@ -1243,7 +1281,7 @@ export default function App() {
                   monthId={selectedMonthId}
                   indicators={indicators.filter(i => 
                     i.sectorId === activeSectorId && 
-                    !i.isGeneral && 
+                    i.isGeneral !== true && 
                     (i.operation === activeOperation || i.operation === 'both' || !i.operation)
                   )}
                   collaborators={collaborators.filter(c => c.sectorId === activeSectorId)}
@@ -1814,7 +1852,7 @@ function SectorDashboard({
       const v = dataValues.find(dv => 
         dv.indicatorId === indicator.id && 
         dv.collaboratorId === c.id && 
-        (dv.operation || 'sittax') === activeOperation &&
+        (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
         !dv.date
       )?.value;
       if (v === undefined || v === '-' || v === '') return 0;
@@ -1825,6 +1863,24 @@ function SectorDashboard({
     
     if (indicator.type === 'percentage') {
        return collaborators.length > 0 ? total / collaborators.length : 0;
+    }
+    return total;
+  };
+
+  const getSectorDailyTotal = (indicator: Indicator) => {
+    const dailyValues = dataValues.filter(dv => 
+      dv.indicatorId === indicator.id && 
+      dv.collaboratorId === 'sector' && 
+      (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
+      dv.date
+    );
+    const total = dailyValues.reduce((acc, dv) => {
+      const num = parseFloat(String(dv.value).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
+      return acc + (isNaN(num) ? 0 : num);
+    }, 0);
+    
+    if (indicator.type === 'percentage') {
+       return dailyValues.length > 0 ? total / dailyValues.length : 0;
     }
     return total;
   };
@@ -1977,14 +2033,14 @@ function SectorDashboard({
                 <tbody className="divide-y divide-gray-100">
                   {indicators.map(indicator => {
                     const rowTotal = getRowTotal(indicator);
+                    const sectorDailyTotal = getSectorDailyTotal(indicator);
                     const sectorValue = dataValues.find(dv => 
                       dv.indicatorId === indicator.id && 
                       dv.collaboratorId === 'sector' && 
-                      dv.monthId === monthId &&
-                      (dv.operation || 'sittax') === activeOperation &&
+                      (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
                       !dv.date
                     )?.value;
-                    const displayValue = sectorValue !== undefined && sectorValue !== '' ? sectorValue : rowTotal;
+                    const displayValue = sectorValue !== undefined && sectorValue !== '' ? sectorValue : (indicator.isGeneral ? sectorDailyTotal : rowTotal);
                     const isNegative = indicator.name.toLowerCase().includes('perdido') || indicator.name.toLowerCase().includes('cancelamento');
                     const isSectorOnly = indicator.isSectorOnly || 
                       indicator.name.toLowerCase().includes('(setor)') || 
@@ -2005,7 +2061,8 @@ function SectorDashboard({
                           const val = dataValues.find(dv => 
                             dv.indicatorId === indicator.id && 
                             dv.collaboratorId === c.id &&
-                            (dv.operation || 'sittax') === activeOperation
+                            (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
+                            !dv.date
                           )?.value;
                           const isMetaMet = c.meta && !isNaN(Number(val)) && Number(val) >= c.meta;
                           
@@ -2023,6 +2080,7 @@ function SectorDashboard({
                             <td key={c.id} className="p-0 border-r border-gray-50 relative group/cell">
                               <div className="absolute inset-0 bg-gray-50/0 group-hover/cell:bg-gray-50/50 transition-colors" />
                               <input 
+                                key={`${indicator.id}-${c.id}-${val}-${activeOperation}-${monthId}`}
                                 type="text"
                                 className={cn(
                                   "relative z-10 w-full h-full p-3 sm:p-5 text-center text-xs sm:text-sm font-mono font-bold focus:bg-white focus:outline-none transition-all",
@@ -2158,7 +2216,7 @@ function GeneralIndicatorView({
   onDeleteIndicator: (id: string) => void
 }) {
   const currentDates = operationDates
-    .filter(od => od.monthId === monthId && od.operation === operation)
+    .filter(od => od.monthId === monthId && (od.operation === operation || od.operation === 'both' || !od.operation))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const [newDate, setNewDate] = useState('');
@@ -2224,8 +2282,8 @@ function GeneralIndicatorView({
             <tbody>
               {SECTORS.map(sector => {
                 const sectorIndicators = indicators.filter(i => 
-                  i.sectorId === sector.id && 
-                  i.isGeneral !== false && 
+                  normalizeId(i.sectorId) === normalizeId(sector.id) && 
+                  i.isGeneral === true && 
                   (i.operation === operation || i.operation === 'both' || !i.operation)
                 );
                 
@@ -2280,15 +2338,15 @@ function GeneralIndicatorView({
                       const dv = dataValues.find(d => 
                         d.indicatorId === indicator.id && 
                         d.collaboratorId === 'sector' && 
-                        d.monthId === monthId && 
-                        d.operation === operation &&
-                        d.date === od.date
+                        (d.operation === operation || d.operation === 'both' || !d.operation) &&
+                        normalizeDate(d.date || '') === normalizeDate(od.date)
                       );
                       return (
                         <td key={od.id} className="p-0 border-r border-gray-50">
                           <input 
+                            key={`${indicator.id}-${od.date}-${dv?.value}-${operation}-${monthId}`}
                             type="text"
-                            defaultValue={dv?.value || ''}
+                            defaultValue={dv?.value !== undefined && dv?.value !== null ? dv.value : ''}
                             onBlur={(e) => onSaveValue(indicator.id, 'sector', e.target.value, od.date)}
                             className="w-full h-full p-3 sm:p-4 text-center text-[10px] sm:text-xs font-mono font-bold text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:bg-orange-50/30 transition-all"
                             placeholder="-"
@@ -2314,6 +2372,7 @@ function OverviewView({
   collaborators, 
   sectorHighlights,
   monthId,
+  activeOperation,
   onNavigate 
 }: { 
   sectors: Sector[], 
@@ -2322,6 +2381,7 @@ function OverviewView({
   collaborators: Collaborator[], 
   sectorHighlights: SectorHighlight[],
   monthId: string,
+  activeOperation: 'sittax' | 'openix',
   onNavigate: (id: string) => void 
 }) {
   return (
@@ -2407,20 +2467,41 @@ function OverviewView({
                       const csatInd = sectorInds.find(i => i.name.toLowerCase().includes('csat'));
                       let csatDisplay = '-';
                       if (csatInd) {
-                        const sectorOverride = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === 'sector');
-                        if (sectorOverride && sectorOverride.value !== undefined && sectorOverride.value !== '' && sectorOverride.value !== '-') {
-                          const valStr = String(sectorOverride.value);
+                        const sectorValues = dataValues.filter(dv => 
+                          dv.indicatorId === csatInd.id && 
+                          dv.collaboratorId === 'sector' &&
+                          (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation)
+                        );
+                        
+                        const monthlyValue = sectorValues.find(dv => !dv.date)?.value;
+                        
+                        if (monthlyValue !== undefined && monthlyValue !== '' && monthlyValue !== '-') {
+                          const valStr = String(monthlyValue);
                           csatDisplay = valStr.endsWith('%') ? valStr : `${valStr}%`;
                         } else {
-                          const colabValues = sectorColabs.map(c => {
-                            const v = dataValues.find(dv => dv.indicatorId === csatInd.id && dv.collaboratorId === c.id)?.value;
-                            if (v === undefined || v === '-' || v === '') return 0;
-                            const num = parseFloat(String(v).replace(',', '.'));
-                            return isNaN(num) ? 0 : num;
-                          });
-                          const total = colabValues.reduce((a, b) => a + b, 0);
-                          const avg = sectorColabs.length > 0 ? total / sectorColabs.length : 0;
-                          csatDisplay = avg > 0 ? `${avg.toFixed(1)}%` : '-';
+                          const dailyValues = sectorValues.filter(dv => dv.date);
+                          if (dailyValues.length > 0) {
+                            const total = dailyValues.reduce((acc, dv) => {
+                              const num = parseFloat(String(dv.value).replace(',', '.'));
+                              return acc + (isNaN(num) ? 0 : num);
+                            }, 0);
+                            csatDisplay = `${(total / dailyValues.length).toFixed(1)}%`;
+                          } else {
+                            const colabValues = sectorColabs.map(c => {
+                              const v = dataValues.find(dv => 
+                                dv.indicatorId === csatInd.id && 
+                                dv.collaboratorId === c.id &&
+                                (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
+                                !dv.date
+                              )?.value;
+                              if (v === undefined || v === '-' || v === '') return 0;
+                              const num = parseFloat(String(v).replace(',', '.'));
+                              return isNaN(num) ? 0 : num;
+                            });
+                            const total = colabValues.reduce((a, b) => a + b, 0);
+                            const avg = sectorColabs.length > 0 ? total / sectorColabs.length : 0;
+                            csatDisplay = avg > 0 ? `${avg.toFixed(1)}%` : '-';
+                          }
                         }
                       }
                       return (
@@ -2548,7 +2629,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
         metaSittax: metaSittax ? parseFloat(metaSittax) : undefined,
         metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined,
         operation: operation === 'sector' ? 'both' : operation as any,
-        isGeneral: operation === 'sector' ? false : undefined
+        isGeneral: showSectorSelect ? true : false
       }); 
     }} className="space-y-4 sm:space-y-6">
       {showSectorSelect && (
