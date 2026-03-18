@@ -1459,7 +1459,7 @@ function DevelopmentView({
         x: e.technicalAverage,
         y: e.behavioralAverage,
         name: colab?.name || 'Desconhecido',
-        classification: e.classification
+        classification: e.manualClassification || e.classification
       };
     });
   }, [sectorEvals, sectorColabs]);
@@ -1501,7 +1501,7 @@ function DevelopmentView({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {(['DELEGAR', 'MOTIVAR', 'GUIAR', 'DIRECIONAR'] as const).map(cat => {
           const styles = getClassificationStyles(cat);
-          const catEvals = sectorEvals.filter(e => e.classification === cat);
+          const catEvals = sectorEvals.filter(e => (e.manualClassification || e.classification) === cat);
           return (
             <div key={cat} className={cn("border-t-4 rounded-2xl", 
               cat === 'DELEGAR' ? 'border-t-[#10B981]' :
@@ -1541,23 +1541,24 @@ function DevelopmentView({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {sectorColabs.map(colab => {
           const evalData = sectorEvals.find(e => e.collaboratorId === colab.id);
-          const styles = evalData ? getClassificationStyles(evalData.classification) : null;
+          const currentClass = evalData?.manualClassification || evalData?.classification;
+          const styles = currentClass ? getClassificationStyles(currentClass) : null;
 
           return (
             <div 
               key={colab.id} 
               className="border-t-4 rounded-2xl"
               style={{ borderTopColor: styles ? (
-                evalData?.classification === 'DELEGAR' ? '#10B981' :
-                evalData?.classification === 'MOTIVAR' ? '#3B82F6' :
-                evalData?.classification === 'GUIAR' ? '#F59E0B' : '#EF4444'
+                currentClass === 'DELEGAR' ? '#10B981' :
+                currentClass === 'MOTIVAR' ? '#3B82F6' :
+                currentClass === 'GUIAR' ? '#F59E0B' : '#EF4444'
               ) : '#f3f4f6' }}
             >
               <Card className="group hover:shadow-xl transition-all duration-300 h-full relative">
                 <div className="flex flex-col items-center text-center space-y-4">
                   {evalData ? (
                     <div className={cn("px-3 py-1 rounded-full text-[10px] font-black tracking-widest text-white shadow-sm", styles?.badge)}>
-                      {evalData.classification}
+                      {currentClass}
                     </div>
                   ) : (
                     <div className="px-3 py-1 rounded-full text-[10px] font-black tracking-widest bg-gray-100 text-gray-400">
@@ -1672,7 +1673,8 @@ function DevelopmentEvaluationForm({
   const [evaluationDate, setEvaluationDate] = useState(initialData?.evaluationDate || format(new Date(), 'yyyy-MM-dd'));
   const [techScores, setTechScores] = useState<Record<string, number>>(initialData?.technicalScores || {});
   const [behaveScores, setBehaveScores] = useState<Record<string, number>>(initialData?.behavioralScores || {});
-  const [step, setStep] = useState<'date' | 'tech' | 'behave'>('date');
+  const [manualClassification, setManualClassification] = useState<DevelopmentClassification | undefined>(initialData?.manualClassification);
+  const [step, setStep] = useState<'date' | 'tech' | 'behave' | 'classification'>('date');
 
   const calculateAverages = () => {
     const techVals = Object.values(techScores) as number[];
@@ -1690,9 +1692,11 @@ function DevelopmentEvaluationForm({
     return { techAvg, behaveAvg, classification };
   };
 
-  const isStepComplete = step === 'date' ? !!evaluationDate : (step === 'tech' 
-    ? Object.keys(techScores).length === TECHNICAL_QUESTIONS.length 
-    : Object.keys(behaveScores).length === BEHAVIORAL_QUESTIONS.length);
+  const isStepComplete = step === 'date' ? !!evaluationDate : (
+    step === 'tech' ? Object.keys(techScores).length === TECHNICAL_QUESTIONS.length :
+    step === 'behave' ? Object.keys(behaveScores).length === BEHAVIORAL_QUESTIONS.length :
+    true
+  );
 
   return (
     <div className="space-y-4 sm:space-y-6 max-h-[70vh] overflow-y-auto pr-1 sm:pr-2">
@@ -1700,6 +1704,7 @@ function DevelopmentEvaluationForm({
         <div className={cn("flex-1 h-1.5 sm:h-2 rounded-full", step === 'date' ? "bg-[#FF6B00]" : "bg-gray-200")} />
         <div className={cn("flex-1 h-1.5 sm:h-2 rounded-full", step === 'tech' ? "bg-[#FF6B00]" : "bg-gray-200")} />
         <div className={cn("flex-1 h-1.5 sm:h-2 rounded-full", step === 'behave' ? "bg-[#FF6B00]" : "bg-gray-200")} />
+        <div className={cn("flex-1 h-1.5 sm:h-2 rounded-full", step === 'classification' ? "bg-[#FF6B00]" : "bg-gray-200")} />
       </div>
 
       <div className="space-y-4">
@@ -1717,7 +1722,7 @@ function DevelopmentEvaluationForm({
           </div>
         )}
 
-        {step !== 'date' && (
+        {(step === 'tech' || step === 'behave') && (
           <>
             <h4 className="font-bold text-gray-900 flex items-center gap-2 text-sm sm:text-base">
               {step === 'tech' ? <Target size={18} className="text-[#FF6B00]" /> : <Users size={18} className="text-[#FF6B00]" />}
@@ -1751,10 +1756,65 @@ function DevelopmentEvaluationForm({
             ))}
           </>
         )}
+
+        {step === 'classification' && (
+          <div className="space-y-6">
+            <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+              <p className="text-sm text-[#FF6B00] font-medium">Revise a classificação automática e ajuste se necessário.</p>
+            </div>
+
+            {(() => {
+              const { techAvg, behaveAvg, classification: autoClass } = calculateAverages();
+              const currentClass = manualClassification || autoClass;
+              
+              return (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Média Técnica</p>
+                      <p className="text-2xl font-black text-gray-900">{techAvg.toFixed(1)}</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Média Comportamental</p>
+                      <p className="text-2xl font-black text-gray-900">{behaveAvg.toFixed(1)}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-sm font-bold text-gray-700">Quadrante de Desenvolvimento</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['DELEGAR', 'MOTIVAR', 'GUIAR', 'DIRECIONAR'] as const).map(q => (
+                        <button
+                          key={q}
+                          type="button"
+                          onClick={() => setManualClassification(q)}
+                          className={cn(
+                            "p-3 rounded-xl text-[10px] font-black tracking-widest transition-all border-2",
+                            currentClass === q
+                              ? "bg-[#FF6B00] text-white border-[#FF6B00] shadow-lg shadow-orange-100"
+                              : "bg-white text-gray-400 border-gray-100 hover:border-orange-100"
+                          )}
+                        >
+                          {q}
+                          {autoClass === q && !manualClassification && (
+                            <span className="block text-[8px] opacity-60 mt-1 font-medium">(Calculado)</span>
+                          )}
+                          {autoClass === q && manualClassification === q && (
+                            <span className="block text-[8px] opacity-60 mt-1 font-medium">(Calculado)</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       <div className="flex justify-between gap-3 pt-4 sticky bottom-0 bg-white pb-1">
-        <Button variant="outline" onClick={step === 'date' ? onCancel : (step === 'tech' ? () => setStep('date') : () => setStep('tech'))} size="sm" className="flex-1 sm:flex-none">
+        <Button variant="outline" onClick={step === 'date' ? onCancel : (step === 'tech' ? () => setStep('date') : (step === 'behave' ? () => setStep('tech') : () => setStep('behave')))} size="sm" className="flex-1 sm:flex-none">
           {step === 'date' ? 'Cancelar' : 'Voltar'}
         </Button>
         <Button 
@@ -1764,6 +1824,7 @@ function DevelopmentEvaluationForm({
           onClick={async () => {
             if (step === 'date') setStep('tech');
             else if (step === 'tech') setStep('behave');
+            else if (step === 'behave') setStep('classification');
             else {
               const { techAvg, behaveAvg, classification } = calculateAverages();
               await onSubmit({
@@ -1774,12 +1835,13 @@ function DevelopmentEvaluationForm({
                 behavioralScores: behaveScores,
                 technicalAverage: techAvg,
                 behavioralAverage: behaveAvg,
-                classification
+                classification,
+                manualClassification
               });
             }
           }}
         >
-          {step === 'behave' ? 'Finalizar' : 'Próximo'}
+          {step === 'classification' ? 'Finalizar' : 'Próximo'}
         </Button>
       </div>
     </div>
@@ -1921,6 +1983,7 @@ function SectorDashboard({
                     </th>
                     {collaborators.map(c => {
                       const evalData = evaluations.find(e => e.collaboratorId === c.id && e.monthId === monthId);
+                      const currentClass = evalData?.manualClassification || evalData?.classification;
                       const getBadgeColor = (cls?: DevelopmentClassification) => {
                         switch (cls) {
                           case 'DELEGAR': return 'bg-[#10B981]'; // Verde vibrante
@@ -1977,9 +2040,9 @@ function SectorDashboard({
                                 {evalData && (
                                   <div className={cn(
                                     "mt-1 px-2 py-0.5 rounded-md text-[8px] font-black text-white shadow-sm uppercase tracking-wider inline-block",
-                                    getBadgeColor(evalData.classification)
+                                    getBadgeColor(currentClass)
                                   )}>
-                                    {evalData.classification}
+                                    {currentClass}
                                   </div>
                                 )}
                               </div>
@@ -2346,7 +2409,7 @@ function GeneralIndicatorView({
                           <input 
                             key={`${indicator.id}-${od.date}-${dv?.value}-${operation}-${monthId}`}
                             type="text"
-                            defaultValue={dv?.value !== undefined && dv?.value !== null ? dv.value : ''}
+                            defaultValue={formatValue(dv?.value, indicator.type)}
                             onBlur={(e) => onSaveValue(indicator.id, 'sector', e.target.value, od.date)}
                             className="w-full h-full p-3 sm:p-4 text-center text-[10px] sm:text-xs font-mono font-bold text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:bg-orange-50/30 transition-all"
                             placeholder="-"

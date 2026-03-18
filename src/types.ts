@@ -73,6 +73,7 @@ export interface DevelopmentEvaluation {
   technicalAverage: number;
   behavioralAverage: number;
   classification: DevelopmentClassification;
+  manualClassification?: DevelopmentClassification;
   updatedAt: any;
 }
 
