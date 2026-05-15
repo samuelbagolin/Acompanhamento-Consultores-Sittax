@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Component } from 'react';
 import { 
   LayoutDashboard, 
   Plus, 
@@ -35,7 +35,9 @@ import {
   MessageSquare,
   ClipboardList,
   Menu,
-  X
+  X,
+  GripVertical,
+  GripHorizontal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -53,6 +55,7 @@ import {
 } from 'recharts';
 import { format, parse, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { ReactSortable } from "react-sortablejs";
 import { db } from './lib/firebase';
 import { 
   collection, 
@@ -251,7 +254,65 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose:
 
 // --- Main App ---
 
+// --- Error Boundary ---
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends Component<any, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center space-y-6">
+            <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto text-red-500">
+              <AlertCircle size={40} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Ops! Algo deu errado</h1>
+              <p className="text-gray-600">Ocorreu um erro crítico na aplicação. Tentamos registrar os detalhes para correção.</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 text-left overflow-auto max-h-40">
+              <p className="text-xs font-mono text-red-600 whitespace-pre-wrap">
+                {this.state.error?.toString()}
+              </p>
+            </div>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-[#FF6B00] text-white rounded-xl font-bold hover:bg-[#E66000] transition-colors shadow-lg shadow-orange-200"
+            >
+              Recarregar Painel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (this as any).props.children;
+  }
+}
+
+// Top-level export with ErrorBoundary
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppWrapper />
+    </ErrorBoundary>
+  );
+}
+
+function AppWrapper() {
   const [loading, setLoading] = useState(true);
   const [activeSectorId, setActiveSectorId] = useState<string>('onboarding');
   const [activeOperation, setActiveOperation] = useState<'sittax' | 'openix'>('sittax');
@@ -304,14 +365,20 @@ export default function App() {
 
   useEffect(() => {
     const init = async () => {
-      await Promise.all([
-        fetchMonths(),
-        fetchSectorOverrides(),
-        fetchEvaluations(),
-        fetchSectorHighlights(),
-        fetchOperationDates()
-      ]);
-      setLoading(false);
+      try {
+        await Promise.all([
+          fetchMonths(),
+          fetchSectorOverrides(),
+          fetchEvaluations(),
+          fetchSectorHighlights(),
+          fetchOperationDates()
+        ]);
+        console.log('App loaded successfully');
+      } catch (err) {
+        console.error('Error during init:', err);
+      } finally {
+        setLoading(false);
+      }
     };
     init();
   }, []);
@@ -460,8 +527,8 @@ export default function App() {
         getDocs(query(collection(db, 'operationDates'), where('monthId', '==', monthId)))
       ]);
 
-      const cols = colSnap.docs.map(d => ({ id: d.id, ...d.data() } as Collaborator));
-      const inds = indSnap.docs.map(d => ({ id: d.id, ...d.data() } as Indicator)).sort((a, b) => a.order - b.order);
+      const cols = colSnap.docs.map(d => ({ id: d.id, ...d.data() } as Collaborator)).sort((a, b) => (a.order || 0) - (b.order || 0));
+      const inds = indSnap.docs.map(d => ({ id: d.id, ...d.data() } as Indicator)).sort((a, b) => (a.order || 0) - (b.order || 0));
       const vals = valSnap.docs.map(d => ({ id: d.id, ...d.data() } as DataValue));
       const highs = highSnap.docs.map(d => ({ id: d.id, ...d.data() } as SectorHighlight));
       const dates = dateSnap.docs.map(d => ({ id: d.id, ...d.data() } as OperationDate));
@@ -597,6 +664,32 @@ export default function App() {
       });
     }
     fetchMonthData(selectedMonthId);
+  };
+
+  const handleReorderIndicators = async (reorderedIndicators: Indicator[]) => {
+    const batch = writeBatch(db);
+    reorderedIndicators.forEach((ind, index) => {
+      const ref = doc(db, 'indicators', ind.id);
+      batch.update(ref, { order: index });
+    });
+    await batch.commit();
+    setIndicators(prev => {
+      const otherInds = prev.filter(i => !reorderedIndicators.map(r => r.id).includes(i.id));
+      return [...otherInds, ...reorderedIndicators.map((ind, index) => ({ ...ind, order: index }))].sort((a, b) => (a.order || 0) - (b.order || 0));
+    });
+  };
+
+  const handleReorderCollaborators = async (reorderedCollaborators: Collaborator[]) => {
+    const batch = writeBatch(db);
+    reorderedCollaborators.forEach((col, index) => {
+      const ref = doc(db, 'collaborators', col.id);
+      batch.update(ref, { order: index });
+    });
+    await batch.commit();
+    setCollaborators(prev => {
+      const otherCols = prev.filter(c => !reorderedCollaborators.map(r => r.id).includes(c.id));
+      return [...otherCols, ...reorderedCollaborators.map((col, index) => ({ ...col, order: index }))].sort((a, b) => (a.order || 0) - (b.order || 0));
+    });
   };
 
   const handleAddDate = async (date: string) => {
@@ -1273,6 +1366,7 @@ export default function App() {
                   onAddIndicator={() => setIsIndicatorModalOpen(true)}
                   onEditIndicator={(i) => { setEditingIndicator(i); setIsIndicatorModalOpen(true); }}
                   onDeleteIndicator={handleDeleteIndicator}
+                  onReorderIndicators={handleReorderIndicators}
                 />
               ) : (
                 <SectorDashboard 
@@ -1301,6 +1395,8 @@ export default function App() {
                     setSelectedCollaborator(c);
                     setIsDevelopmentModalOpen(true);
                   }}
+                  onReorderIndicators={handleReorderIndicators}
+                  onReorderCollaborators={handleReorderCollaborators}
                 />
               )}
             </motion.div>
@@ -1870,7 +1966,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, labe
   );
 }
 
-function SectorDashboard({ 
+const SectorDashboard = React.memo(function SectorDashboard({ 
   sector, 
   activeOperation,
   monthId, 
@@ -1888,7 +1984,9 @@ function SectorDashboard({
   onEditIndicator,
   onDeleteIndicator,
   onEditSector,
-  onEvaluateCollaborator
+  onEvaluateCollaborator,
+  onReorderIndicators,
+  onReorderCollaborators
 }: { 
   sector: Sector, 
   activeOperation: 'sittax' | 'openix',
@@ -1907,45 +2005,77 @@ function SectorDashboard({
   onEditIndicator: (i: Indicator) => void,
   onDeleteIndicator: (id: string) => void,
   onEditSector: () => void,
-  onEvaluateCollaborator: (c: Collaborator) => void
+  onEvaluateCollaborator: (c: Collaborator) => void,
+  onReorderIndicators: (items: Indicator[]) => void,
+  onReorderCollaborators: (items: Collaborator[]) => void
 }) {
+  const safeIndicators = useMemo(() => indicators.filter(Boolean), [indicators]);
+  const safeCollaborators = useMemo(() => collaborators.filter(Boolean), [collaborators]);
+
   const getRowTotal = (indicator: Indicator) => {
-    const values = collaborators.map(c => {
+    const validValues = safeCollaborators.map(c => {
       const v = dataValues.find(dv => 
         dv.indicatorId === indicator.id && 
         dv.collaboratorId === c.id && 
         (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
         !dv.date
       )?.value;
-      if (v === undefined || v === '-' || v === '') return 0;
+      if (v === undefined || v === '-' || v === '') return null;
       const num = parseFloat(String(v).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
-      return isNaN(num) ? 0 : num;
-    });
-    const total = values.reduce((a, b) => a + b, 0);
+      return isNaN(num) ? null : num;
+    }).filter(v => v !== null) as number[];
+
+    if (validValues.length === 0) return 0;
+    const total = validValues.reduce((a, b) => a + b, 0);
     
-    if (indicator.type === 'percentage') {
-       return collaborators.length > 0 ? total / collaborators.length : 0;
+    if (indicator.resultType === 'average' || indicator.type === 'percentage') {
+       return total / validValues.length;
     }
     return total;
   };
 
   const getSectorDailyTotal = (indicator: Indicator) => {
-    const dailyValues = dataValues.filter(dv => 
+    const dailyDocs = dataValues.filter(dv => 
       dv.indicatorId === indicator.id && 
       dv.collaboratorId === 'sector' && 
       (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
       dv.date
     );
-    const total = dailyValues.reduce((acc, dv) => {
+    const validValues = dailyDocs.map(dv => {
       const num = parseFloat(String(dv.value).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
-      return acc + (isNaN(num) ? 0 : num);
-    }, 0);
+      return isNaN(num) ? null : num;
+    }).filter(v => v !== null) as number[];
+
+    if (validValues.length === 0) return 0;
+    const total = validValues.reduce((acc, v) => acc + v, 0);
     
-    if (indicator.type === 'percentage') {
-       return dailyValues.length > 0 ? total / dailyValues.length : 0;
+    if (indicator.resultType === 'average' || indicator.type === 'percentage') {
+       return total / validValues.length;
     }
     return total;
   };
+
+  const moveIndicator = (index: number, direction: 'up' | 'down') => {
+    const newItems = [...safeIndicators];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex >= 0 && targetIndex < newItems.length) {
+      [newItems[index], newItems[targetIndex]] = [newItems[targetIndex], newItems[index]];
+      onReorderIndicators(newItems);
+    }
+  };
+
+  const moveCollaborator = (index: number, direction: 'left' | 'right') => {
+    const newItems = [...safeCollaborators];
+    const targetIndex = direction === 'left' ? index - 1 : index + 1;
+    if (targetIndex >= 0 && targetIndex < newItems.length) {
+      [newItems[index], newItems[targetIndex]] = [newItems[targetIndex], newItems[index]];
+      onReorderCollaborators(newItems);
+    }
+  };
+
+  if (!sector) return null;
+
+  console.log('Rendering SectorDashboard:', { sector: sector?.name, indicators: indicators?.length, collaborators: collaborators?.length });
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -1981,7 +2111,7 @@ function SectorDashboard({
                     <th className="p-3 sm:p-6 text-left border-r border-white/10 w-[140px] sm:w-[240px] sticky left-0 z-40" style={{ backgroundColor: sector.color }}>
                       <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest opacity-80">Indicador</span>
                     </th>
-                    {collaborators.map(c => {
+                    {safeCollaborators.map((c, idx) => {
                       const evalData = evaluations.find(e => e.collaboratorId === c.id && e.monthId === monthId);
                       const currentClass = evalData?.manualClassification || evalData?.classification;
                       const getBadgeColor = (cls?: DevelopmentClassification) => {
@@ -1999,7 +2129,29 @@ function SectorDashboard({
                       return (
                         <th key={c.id} className="p-3 sm:p-6 border-r border-white/10 min-w-[120px] sm:min-w-[160px] group relative overflow-hidden">
                           <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-30" />
-                          <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3">
+                          
+                          {/* Reorder buttons for columns */}
+                          <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); moveCollaborator(idx, 'left'); }}
+                              disabled={idx === 0}
+                              className="p-1 rounded-md bg-black/20 hover:bg-black/40 disabled:opacity-0 transition-all"
+                            >
+                              <ChevronLeft size={10} />
+                            </button>
+                            <div className="p-1 cursor-grab active:cursor-grabbing">
+                               <GripHorizontal size={10} className="text-white/60" />
+                            </div>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); moveCollaborator(idx, 'right'); }}
+                              disabled={idx === collaborators.length - 1}
+                              className="p-1 rounded-md bg-black/20 hover:bg-black/40 disabled:opacity-0 transition-all"
+                            >
+                              <ChevronRight size={10} />
+                            </button>
+                          </div>
+
+                          <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3 mt-4 sm:mt-2">
                             <div className="relative">
                               <img 
                                 src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
@@ -2093,104 +2245,122 @@ function SectorDashboard({
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {indicators.map(indicator => {
-                    const rowTotal = getRowTotal(indicator);
-                    const sectorDailyTotal = getSectorDailyTotal(indicator);
-                    const sectorValue = dataValues.find(dv => 
-                      dv.indicatorId === indicator.id && 
-                      dv.collaboratorId === 'sector' && 
-                      (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
-                      !dv.date
-                    )?.value;
-                    const displayValue = sectorValue !== undefined && sectorValue !== '' ? sectorValue : (indicator.isGeneral ? sectorDailyTotal : rowTotal);
-                    const isNegative = indicator.name.toLowerCase().includes('perdido') || indicator.name.toLowerCase().includes('cancelamento');
-                    const isSectorOnly = indicator.isSectorOnly || 
-                      indicator.name.toLowerCase().includes('(setor)') || 
-                      indicator.name.toLowerCase().includes('(total)');
-                    
-                    return (
-                      <tr key={indicator.id} className={cn("transition-colors group", isSectorOnly ? "bg-gray-50/50" : "hover:bg-gray-50/80")}>
-                        <td className="p-3 sm:p-5 border-r border-gray-100 bg-white sticky left-0 z-20 group-hover:bg-gray-50 transition-colors">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs sm:text-sm font-bold text-gray-700 tracking-tight">{indicator.name}</span>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => onEditIndicator(indicator)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={12} /></button>
-                              <button onClick={() => onDeleteIndicator(indicator.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={12} /></button>
-                            </div>
-                          </div>
-                        </td>
-                        {collaborators.map(c => {
-                          const val = dataValues.find(dv => 
-                            dv.indicatorId === indicator.id && 
-                            dv.collaboratorId === c.id &&
-                            (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
-                            !dv.date
-                          )?.value;
-                          const isMetaMet = c.meta && !isNaN(Number(val)) && Number(val) >= c.meta;
-                          
-                          if (isSectorOnly) {
-                            return (
-                              <td key={c.id} className="p-0 border-r border-gray-50 bg-gray-50/20 relative">
-                                <div className="w-full h-full p-3 sm:p-5 flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm">
-                                  -
-                                </div>
-                              </td>
-                            );
-                          }
-
-                          return (
-                            <td key={c.id} className="p-0 border-r border-gray-50 relative group/cell">
-                              <div className="absolute inset-0 bg-gray-50/0 group-hover/cell:bg-gray-50/50 transition-colors" />
-                              <input 
-                                key={`${indicator.id}-${c.id}-${val}-${activeOperation}-${monthId}`}
-                                type="text"
-                                className={cn(
-                                  "relative z-10 w-full h-full p-3 sm:p-5 text-center text-xs sm:text-sm font-mono font-bold focus:bg-white focus:outline-none transition-all",
-                                  isNegative && Number(val) > 0 ? "text-red-600" : 
-                                  isMetaMet ? "" : "text-gray-600"
-                                )}
-                                style={{ color: !isNegative && isMetaMet ? sector.color : undefined }}
-                                defaultValue={formatValue(val, indicator.type)}
-                                onBlur={(e) => onSaveValue(indicator.id, c.id, e.target.value)}
-                                placeholder="-"
-                              />
-                              {isMetaMet && (
-                                <div className="absolute top-1 right-1">
-                                  <CheckCircle2 size={10} style={{ color: sector.color }} />
-                                </div>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td className="p-0 text-center bg-gray-50/30 sticky right-0 z-20 shadow-[-4px_0_8px_rgba(0,0,0,0.02)]">
-                          <input 
-                            type="text"
-                            key={`${indicator.id}-sector-${displayValue}-${monthId}-${activeOperation}`}
-                            className={cn(
-                              "w-full h-full p-3 sm:p-5 text-center text-xs sm:text-sm font-mono font-black focus:bg-white focus:outline-none transition-colors",
-                              isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : ""
-                            )}
-                            style={{ color: isNegative && (parseFloat(String(displayValue)) > 0) ? undefined : sector.color }}
-                            defaultValue={sectorValue !== undefined && sectorValue !== '' ? formatValue(sectorValue, indicator.type) : formatValue(rowTotal, indicator.type)}
-                            onBlur={(e) => {
-                              const val = e.target.value;
-                              const currentFormatted = formatValue(rowTotal, indicator.type);
-                              const sectorFormatted = sectorValue !== undefined && sectorValue !== '' ? formatValue(sectorValue, indicator.type) : undefined;
+                        {collaborators.length > 0 ? (
+                          <ReactSortable 
+                            list={safeIndicators} 
+                            setList={onReorderIndicators} 
+                            tag="tbody" 
+                            handle=".row-drag-handle"
+                            animation={150}
+                            className="divide-y divide-gray-100"
+                          >
+                            {React.Children.toArray(safeIndicators.map((indicator, idx) => {
+                              const rowTotal = getRowTotal(indicator);
+                              const sectorDailyTotal = getSectorDailyTotal(indicator);
+                              const sectorValue = dataValues.find(dv => 
+                                dv.indicatorId === indicator.id && 
+                                dv.collaboratorId === 'sector' && 
+                                (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
+                                !dv.date
+                              )?.value;
+                              const displayValue = sectorValue !== undefined && sectorValue !== '' ? sectorValue : (indicator.isGeneral ? sectorDailyTotal : rowTotal);
+                              const isNegative = indicator.name.toLowerCase().includes('perdido') || indicator.name.toLowerCase().includes('cancelamento');
+                              const isSectorOnly = indicator.isSectorOnly || 
+                                indicator.name.toLowerCase().includes('(setor)') || 
+                                indicator.name.toLowerCase().includes('(total)');
                               
-                              if (val !== currentFormatted && val !== sectorFormatted) {
-                                onSaveValue(indicator.id, 'sector', val);
-                              }
-                            }}
-                            placeholder="-"
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {indicators.length === 0 && (
+                              return (
+                                <tr key={indicator.id} className={cn("transition-colors group", isSectorOnly ? "bg-gray-50/50" : "hover:bg-gray-50/80")}>
+                                  <td className="p-3 sm:p-5 border-r border-gray-100 bg-white sticky left-0 z-20 group-hover:bg-gray-50 transition-colors">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2 overflow-hidden">
+                                         <div className="row-drag-handle cursor-grab active:cursor-grabbing p-1 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col">
+                                            <button onClick={(e) => { e.stopPropagation(); moveIndicator(idx, 'up'); }} disabled={idx === 0} className="hover:text-[#FF6B00] disabled:opacity-0"><ChevronDown size={12} className="rotate-180" /></button>
+                                            <GripVertical size={12} className="text-gray-300" />
+                                            <button onClick={(e) => { e.stopPropagation(); moveIndicator(idx, 'down'); }} disabled={idx === safeIndicators.length - 1} className="hover:text-[#FF6B00] disabled:opacity-0"><ChevronDown size={12} /></button>
+                                         </div>
+                                         <span className="text-xs sm:text-sm font-bold text-gray-700 tracking-tight truncate">{indicator.name}</span>
+                                      </div>
+                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => onEditIndicator(indicator)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={12} /></button>
+                                        <button onClick={() => onDeleteIndicator(indicator.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={12} /></button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  {safeCollaborators.map(c => {
+                                    const val = dataValues.find(dv => 
+                                      dv.indicatorId === indicator.id && 
+                                      dv.collaboratorId === c.id &&
+                                      (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation) &&
+                                      !dv.date
+                                    )?.value;
+                                    const isMetaMet = c.meta && !isNaN(Number(val)) && Number(val) >= c.meta;
+                                    
+                                    if (isSectorOnly) {
+                                      return (
+                                        <td key={c.id} className="p-0 border-r border-gray-50 bg-gray-50/20 relative">
+                                          <div className="w-full h-full p-3 sm:p-5 flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm">
+                                            -
+                                          </div>
+                                        </td>
+                                      );
+                                    }
+
+                                    return (
+                                      <td key={c.id} className="p-0 border-r border-gray-50 relative group/cell">
+                                        <div className="absolute inset-0 bg-gray-50/0 group-hover/cell:bg-gray-50/50 transition-colors" />
+                                        <input 
+                                          key={`${indicator.id}-${c.id}-${val}-${activeOperation}-${monthId}`}
+                                          type="text"
+                                          className={cn(
+                                            "relative z-10 w-full h-full p-3 sm:p-5 text-center text-xs sm:text-sm font-mono font-bold focus:bg-white focus:outline-none transition-all",
+                                            isNegative && Number(val) > 0 ? "text-red-600" : 
+                                            isMetaMet ? "" : "text-gray-600"
+                                          )}
+                                          style={{ color: !isNegative && isMetaMet ? sector.color : undefined }}
+                                          defaultValue={formatValue(val, indicator.type)}
+                                          onBlur={(e) => onSaveValue(indicator.id, c.id, e.target.value)}
+                                          placeholder="-"
+                                        />
+                                        {isMetaMet && (
+                                          <div className="absolute top-1 right-1">
+                                            <CheckCircle2 size={10} style={{ color: sector.color }} />
+                                          </div>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                  <td className="p-0 text-center bg-gray-50/30 sticky right-0 z-20 shadow-[-4px_0_8px_rgba(0,0,0,0.02)]">
+                                    <input 
+                                      type="text"
+                                      key={`${indicator.id}-sector-${displayValue}-${monthId}-${activeOperation}`}
+                                      className={cn(
+                                        "w-full h-full p-3 sm:p-5 text-center text-xs sm:text-sm font-mono font-black focus:bg-white focus:outline-none transition-colors",
+                                        isNegative && (parseFloat(String(displayValue)) > 0) ? "text-red-600" : ""
+                                      )}
+                                      style={{ color: isNegative && (parseFloat(String(displayValue)) > 0) ? undefined : sector.color }}
+                                      defaultValue={sectorValue !== undefined && sectorValue !== '' ? formatValue(sectorValue, indicator.type) : formatValue(rowTotal, indicator.type)}
+                                      onBlur={(e) => {
+                                        const val = e.target.value;
+                                        const currentFormatted = formatValue(rowTotal, indicator.type);
+                                        const sectorFormatted = sectorValue !== undefined && sectorValue !== '' ? formatValue(sectorValue, indicator.type) : undefined;
+                                        
+                                        if (val !== currentFormatted && val !== sectorFormatted) {
+                                          onSaveValue(indicator.id, 'sector', val);
+                                        }
+                                      }}
+                                      placeholder="-"
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            }))}
+                          </ReactSortable>
+                        ) : null}
+                {safeIndicators.length === 0 && (
+                  <tbody className="divide-y divide-gray-100">
                     <tr>
-                      <td colSpan={collaborators.length + 2} className="p-20 text-center">
+                      <td colSpan={safeCollaborators.length + 2} className="p-20 text-center">
                         <div className="flex flex-col items-center gap-4">
                           <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-gray-300">
                             <Settings size={32} />
@@ -2200,8 +2370,8 @@ function SectorDashboard({
                         </div>
                       </td>
                     </tr>
-                  )}
-                </tbody>
+                  </tbody>
+                )}
               </table>
             </div>
           </div>
@@ -2251,9 +2421,9 @@ function SectorDashboard({
       </div>
     </div>
   );
-}
+});
 
-function GeneralIndicatorView({ 
+const GeneralIndicatorView = React.memo(function GeneralIndicatorView({ 
   indicators, 
   dataValues, 
   monthId,
@@ -2264,7 +2434,8 @@ function GeneralIndicatorView({
   onDeleteDate,
   onAddIndicator,
   onEditIndicator,
-  onDeleteIndicator
+  onDeleteIndicator,
+  onReorderIndicators
 }: { 
   indicators: Indicator[], 
   dataValues: DataValue[], 
@@ -2276,8 +2447,10 @@ function GeneralIndicatorView({
   onDeleteDate: (dateId: string) => void,
   onAddIndicator: () => void,
   onEditIndicator: (indicator: Indicator) => void,
-  onDeleteIndicator: (id: string) => void
+  onDeleteIndicator: (id: string) => void,
+  onReorderIndicators: (items: Indicator[]) => void
 }) {
+  const safeIndicators = useMemo(() => indicators.filter(Boolean), [indicators]);
   const currentDates = operationDates
     .filter(od => od.monthId === monthId && (od.operation === operation || od.operation === 'both' || !od.operation))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -2342,17 +2515,17 @@ function GeneralIndicatorView({
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {SECTORS.map(sector => {
-                const sectorIndicators = indicators.filter(i => 
-                  normalizeId(i.sectorId) === normalizeId(sector.id) && 
-                  i.isGeneral === true && 
-                  (i.operation === operation || i.operation === 'both' || !i.operation)
-                );
-                
-                if (sectorIndicators.length === 0) {
-                  return (
-                    <tr key={sector.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+            {SECTORS.map(sector => {
+              const sectorIndicators = safeIndicators.filter(i => 
+                normalizeId(i.sectorId) === normalizeId(sector.id) && 
+                i.isGeneral === true && 
+                (i.operation === operation || i.operation === 'both' || !i.operation)
+              );
+              
+              if (sectorIndicators.length === 0) {
+                return (
+                  <tbody key={sector.id}>
+                    <tr className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                       <td className="p-3 sm:p-4 border-r border-gray-50 font-bold text-[10px] sm:text-xs text-gray-900 sticky left-0 z-10 bg-white">
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 sm:w-2 h-3 sm:h-4 rounded-full" style={{ backgroundColor: sector.color }} />
@@ -2363,70 +2536,96 @@ function GeneralIndicatorView({
                         Nenhum indicador configurado.
                       </td>
                     </tr>
-                  );
-                }
+                  </tbody>
+                );
+              }
 
-                return sectorIndicators.map((indicator, idx) => (
-                  <tr key={indicator.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                    {idx === 0 && (
-                      <td className="p-3 sm:p-4 border-r border-gray-50 font-bold text-[10px] sm:text-xs text-gray-900 align-top sticky left-0 z-10 bg-white" rowSpan={sectorIndicators.length}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-1.5 sm:w-2 h-3 sm:h-4 rounded-full" style={{ backgroundColor: sector.color }} />
-                          <span className="truncate">{sector.name}</span>
-                        </div>
-                      </td>
-                    )}
-                    <td className="p-3 sm:p-4 border-r border-gray-50 text-[10px] sm:text-xs font-medium text-gray-600 sticky left-[80px] sm:left-[120px] z-10 bg-white">
-                      <div className="flex items-center justify-between group/ind">
-                        <span className="truncate mr-2">{indicator.name}</span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover/ind:opacity-100 transition-all">
-                          <button 
-                            onClick={() => onEditIndicator(indicator)}
-                            className="text-gray-400 hover:text-[#FF6B00] p-1"
-                            title="Editar"
-                          >
-                            <Edit2 size={10} />
-                          </button>
-                          <button 
-                            onClick={() => onDeleteIndicator(indicator.id)}
-                            className="text-red-400 hover:text-red-600 p-1"
-                            title="Excluir"
-                          >
-                            <Trash2 size={10} />
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                    {currentDates.map(od => {
-                      const dv = dataValues.find(d => 
-                        d.indicatorId === indicator.id && 
-                        d.collaboratorId === 'sector' && 
-                        (d.operation === operation || d.operation === 'both' || !d.operation) &&
-                        normalizeDate(d.date || '') === normalizeDate(od.date)
-                      );
-                      return (
-                        <td key={od.id} className="p-0 border-r border-gray-50">
-                          <input 
-                            key={`${indicator.id}-${od.date}-${dv?.value}-${operation}-${monthId}`}
-                            type="text"
-                            defaultValue={formatValue(dv?.value, indicator.type)}
-                            onBlur={(e) => onSaveValue(indicator.id, 'sector', e.target.value, od.date)}
-                            className="w-full h-full p-3 sm:p-4 text-center text-[10px] sm:text-xs font-mono font-bold text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:bg-orange-50/30 transition-all"
-                            placeholder="-"
-                          />
+              return (
+                    <ReactSortable
+                      // @ts-ignore
+                      key={sector.id}
+                      list={sectorIndicators}
+                      setList={(newList) => {
+                        // Need to merge with other indicators
+                        const otherInds = safeIndicators.filter(i => 
+                          !(normalizeId(i.sectorId) === normalizeId(sector.id) && 
+                            i.isGeneral === true && 
+                            (i.operation === operation || i.operation === 'both' || !i.operation))
+                        );
+                        onReorderIndicators([...otherInds, ...newList]);
+                      }}
+                      tag="tbody"
+                      className="divide-y divide-gray-100"
+                      handle=".gen-drag-handle"
+                      animation={150}
+                    >
+                    {React.Children.toArray(sectorIndicators.filter(Boolean).map((indicator, idx) => (
+                      <tr key={indicator.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                        {idx === 0 && (
+                          <td className="p-3 sm:p-4 border-r border-gray-50 font-bold text-[10px] sm:text-xs text-gray-900 align-top sticky left-0 z-10 bg-white" rowSpan={sectorIndicators.length}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-1.5 sm:w-2 h-3 sm:h-4 rounded-full" style={{ backgroundColor: sector.color }} />
+                              <span className="truncate">{sector.name}</span>
+                            </div>
+                          </td>
+                        )}
+                        <td className="p-3 sm:p-4 border-r border-gray-50 text-[10px] sm:text-xs font-medium text-gray-600 sticky left-[80px] sm:left-[120px] z-10 bg-white group/row">
+                          <div className="flex items-center justify-between group/ind">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                               <div className="gen-drag-handle cursor-grab active:cursor-grabbing opacity-0 group-hover/ind:opacity-100 transition-opacity">
+                                  <GripVertical size={10} className="text-gray-300" />
+                               </div>
+                               <span className="truncate mr-2">{indicator.name}</span>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover/ind:opacity-100 transition-all">
+                              <button 
+                                onClick={() => onEditIndicator(indicator)}
+                                className="text-gray-400 hover:text-[#FF6B00] p-1"
+                                title="Editar"
+                              >
+                                <Edit2 size={10} />
+                              </button>
+                              <button 
+                                onClick={() => onDeleteIndicator(indicator.id)}
+                                className="text-red-400 hover:text-red-600 p-1"
+                                title="Excluir"
+                              >
+                                <Trash2 size={10} />
+                              </button>
+                            </div>
+                          </div>
                         </td>
-                      );
-                    })}
-                  </tr>
-                ));
+                        {currentDates.map(od => {
+                          const dv = dataValues.find(d => 
+                            d.indicatorId === indicator.id && 
+                            d.collaboratorId === 'sector' && 
+                            (d.operation === operation || d.operation === 'both' || !d.operation) &&
+                            normalizeDate(d.date || '') === normalizeDate(od.date)
+                          );
+                          return (
+                            <td key={od.id} className="p-0 border-r border-gray-50">
+                              <input 
+                                key={`${indicator.id}-${od.date}-${dv?.value}-${operation}-${monthId}`}
+                                type="text"
+                                defaultValue={formatValue(dv?.value, indicator.type)}
+                                onBlur={(e) => onSaveValue(indicator.id, 'sector', e.target.value, od.date)}
+                                className="w-full h-full p-3 sm:p-4 text-center text-[10px] sm:text-xs font-mono font-bold text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:bg-orange-50/30 transition-all"
+                                placeholder="-"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )))}
+                  </ReactSortable>
+                );
               })}
-            </tbody>
           </table>
         </div>
       </div>
     </div>
   );
-}
+});
 
 function OverviewView({ 
   sectors, 
@@ -2675,6 +2874,7 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
   const [type, setType] = useState<IndicatorType>(initialData?.type || 'number');
   const [sectorId, setSectorId] = useState(initialData?.sectorId || SECTORS[0].id);
   const [isSectorOnly, setIsSectorOnly] = useState(initialData?.isSectorOnly || showSectorSelect);
+  const [resultType, setResultType] = useState<'sum' | 'average'>(initialData?.resultType || 'sum');
   const [metaSittax, setMetaSittax] = useState(initialData?.metaSittax?.toString() || '');
   const [metaOpenix, setMetaOpenix] = useState(initialData?.metaOpenix?.toString() || '');
   const [operation, setOperation] = useState<'sittax' | 'openix' | 'both' | 'sector'>(
@@ -2692,7 +2892,8 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
         metaSittax: metaSittax ? parseFloat(metaSittax) : undefined,
         metaOpenix: metaOpenix ? parseFloat(metaOpenix) : undefined,
         operation: operation === 'sector' ? 'both' : operation as any,
-        isGeneral: showSectorSelect ? true : false
+        isGeneral: showSectorSelect ? true : false,
+        resultType
       }); 
     }} className="space-y-4 sm:space-y-6">
       {showSectorSelect && (
@@ -2727,6 +2928,18 @@ function IndicatorForm({ initialData, onSubmit, onCancel, showSectorSelect = fal
             ...(sectorName ? [{ value: 'sector', label: `Apenas ${sectorName}` }] : [])
           ]}
         />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Select 
+          label="Tipo de Resultado Geral" 
+          value={resultType}
+          onChange={(e) => setResultType(e.target.value as 'sum' | 'average')}
+          options={[
+            { value: 'sum', label: 'Soma Geral' },
+            { value: 'average', label: 'Média Geral' },
+          ]}
+        />
+        <div />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input 

@@ -21,6 +21,7 @@ export interface Collaborator {
   name: string;
   avatarUrl?: string;
   meta?: number;
+  order?: number;
 }
 
 export interface Indicator {
@@ -35,6 +36,7 @@ export interface Indicator {
   metaSittax?: number;
   metaOpenix?: number;
   operation?: 'sittax' | 'openix' | 'both';
+  resultType?: 'sum' | 'average';
 }
 
 export interface DataValue {
