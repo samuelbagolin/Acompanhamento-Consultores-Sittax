@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information with roles and permissions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "nome": { "type": "string" },
+        "email": { "type": "string" },
+        "cargo": { "type": "string" },
+        "setor": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "gestor", "colaborador"] },
+        "fotoURL": { "type": "string" },
+        "ativo": { "type": "boolean" }
+      },
+      "required": ["uid", "nome", "email", "role"]
+    },
+    "Month": {
+      "title": "Reporting Month",
+      "description": "A month/year container for data.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "Collaborator": {
+      "title": "Collaborator Record",
+      "description": "Information about a collaborator in a specific month/sector.",
+      "type": "object",
+      "properties": {
+        "monthId": { "type": "string" },
+        "sectorId": { "type": "string" },
+        "uid": { "type": "string", "description": "Optional: Link to the User document for session filtering" },
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "meta": { "type": "number" },
+        "order": { "type": "number" }
+      },
+      "required": ["monthId", "sectorId", "name"]
+    },
+    "Indicator": {
+      "title": "Indicator",
+      "description": "Performance metric definition.",
+      "type": "object",
+      "properties": {
+        "monthId": { "type": "string" },
+        "sectorId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["number", "percentage", "currency", "time"] },
+        "order": { "type": "number" },
+        "isSectorOnly": { "type": "boolean" },
+        "isGeneral": { "type": "boolean" },
+        "metaSittax": { "type": "number" },
+        "metaOpenix": { "type": "number" },
+        "operation": { "type": "string", "enum": ["sittax", "openix", "both"] },
+        "resultType": { "type": "string", "enum": ["sum", "average"] }
+      },
+      "required": ["monthId", "sectorId", "name", "type"]
+    },
+    "DataValue": {
+      "title": "Data Value",
+      "description": "Actual measured value for an indicator and collaborator.",
+      "type": "object",
+      "properties": {
+        "monthId": { "type": "string" },
+        "indicatorId": { "type": "string" },
+        "collaboratorId": { "type": "string" },
+        "uid": { "type": "string", "description": "UID of the owner for privacy filtering if applicable" },
+        "value": { "type": "number" },
+        "operation": { "type": "string", "enum": ["sittax", "openix", "both"] },
+        "date": { "type": "string" }
+      },
+      "required": ["monthId", "indicatorId", "collaboratorId", "value"]
+    },
+    "Evaluation": {
+      "title": "Development Evaluation",
+      "description": "Periodic evaluation of a collaborator.",
+      "type": "object",
+      "properties": {
+        "monthId": { "type": "string" },
+        "collaboratorId": { "type": "string" },
+        "uid": { "type": "string", "description": "UID of the owner for privacy filtering" },
+        "evaluationDate": { "type": "string" },
+        "technicalScores": { "type": "object" },
+        "behavioralScores": { "type": "object" },
+        "technicalAverage": { "type": "number" },
+        "behavioralAverage": { "type": "number" },
+        "classification": { "type": "string" },
+        "manualClassification": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["monthId", "collaboratorId", "uid"]
+    },
+    "OperationDate": {
+      "title": "Operation Date",
+      "description": "Dates tracked for operations like Sittax or Openix.",
+      "type": "object",
+      "properties": {
+        "monthId": { "type": "string" },
+        "operation": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["monthId", "operation", "date"]
+    },
+    "SectorHighlight": {
+      "title": "Sector Highlight",
+      "description": "Highlit collaborator for a sector in a specific month.",
+      "type": "object",
+      "properties": {
+        "monthId": { "type": "string" },
+        "sectorId": { "type": "string" },
+        "collaboratorId": { "type": "string" }
+      },
+      "required": ["monthId", "sectorId", "collaboratorId"]
+    }
+  },
+  "firestore": {
+    "usuarios/{userId}": {
+      "schema": "User",
+      "description": "User profiles with roles."
+    },
+    "months/{monthId}": {
+      "schema": "Month",
+      "description": "Reporting periods."
+    },
+    "collaborators/{collabId}": {
+      "schema": "Collaborator",
+      "description": "Collaborators in a month."
+    },
+    "indicators/{indicatorId}": {
+      "schema": "Indicator",
+      "description": "Performance indicators."
+    },
+    "dataValues/{valId}": {
+      "schema": "DataValue",
+      "description": "Data values for indicators."
+    },
+    "evaluations/{evaluationId}": {
+      "schema": "Evaluation",
+      "description": "Development evaluations."
+    },
+    "operationDates/{dateId}": {
+      "schema": "OperationDate",
+      "description": "Operation dates."
+    },
+    "sectorHighlights/{highId}": {
+      "schema": "SectorHighlight",
+      "description": "Sector highlights."
+    }
+  }
+}

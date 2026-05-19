@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, Component } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Component } from 'react';
 import { 
   LayoutDashboard, 
   Plus, 
@@ -37,7 +37,10 @@ import {
   Menu,
   X,
   GripVertical,
-  GripHorizontal
+  GripHorizontal,
+  Mail,
+  Key,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -72,6 +75,8 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { cn } from './lib/utils';
+import { Toaster, toast } from 'sonner';
+import { UserManagement } from './components/UserManagement';
 import { 
   SECTORS, 
   Sector, 
@@ -85,7 +90,9 @@ import {
   DevelopmentEvaluation,
   DevelopmentClassification,
   TECHNICAL_QUESTIONS,
-  BEHAVIORAL_QUESTIONS
+  BEHAVIORAL_QUESTIONS,
+  User,
+  UserRole
 } from './types';
 
 // --- Helpers ---
@@ -110,7 +117,10 @@ const formatValue = (val: any, type: IndicatorType) => {
   return num.toLocaleString('pt-BR');
 };
 
-const normalizeId = (id: string) => id.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const normalizeId = (id: any) => {
+  if (typeof id !== 'string') return '';
+  return id.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+};
 
 const normalizeDate = (d: string) => {
   if (!d) return '';
@@ -303,16 +313,23 @@ class ErrorBoundary extends Component<any, ErrorBoundaryState> {
   }
 }
 
-// Top-level export with ErrorBoundary
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { Login } from './components/Login';
+
+// Top-level export with AuthProvider and ErrorBoundary
 export default function App() {
   return (
     <ErrorBoundary>
-      <AppWrapper />
+      <AuthProvider>
+        <Toaster position="top-right" richColors />
+        <AppWrapper />
+      </AuthProvider>
     </ErrorBoundary>
   );
 }
 
 function AppWrapper() {
+  const { currentUser, userProfile, loading: authLoading, logout, isAdmin, isGestor, isColaborador } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeSectorId, setActiveSectorId] = useState<string>('onboarding');
   const [activeOperation, setActiveOperation] = useState<'sittax' | 'openix'>('sittax');
@@ -326,6 +343,7 @@ function AppWrapper() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSetoresExpanded, setIsSetoresExpanded] = useState(true);
   const [isGeneralExpanded, setIsGeneralExpanded] = useState(false);
+  const [activeView, setActiveView] = useState<'dashboard' | 'users'>('dashboard');
   const [operationDates, setOperationDates] = useState<OperationDate[]>([]);
 
   useEffect(() => {
@@ -364,15 +382,32 @@ function AppWrapper() {
   const selectedMonth = useMemo(() => months.find(m => m.id === selectedMonthId), [months, selectedMonthId]);
 
   useEffect(() => {
+    if (userProfile?.setor && !isAdmin) {
+      const sectorValues = Array.isArray(userProfile.setor) ? userProfile.setor : [userProfile.setor];
+      if (sectorValues.length > 0) {
+        const firstSectorId = normalizeId(sectorValues[0]);
+        setActiveSectorId(firstSectorId);
+        setDevSelectedSectorId(firstSectorId);
+      }
+    }
+  }, [userProfile?.setor, isAdmin]);
+
+  useEffect(() => {
+    if (!userProfile || authLoading) return;
+
     const init = async () => {
+      setLoading(true);
       try {
         await Promise.all([
           fetchMonths(),
           fetchSectorOverrides(),
           fetchEvaluations(),
           fetchSectorHighlights(),
-          fetchOperationDates()
+          fetchOperationDates(),
         ]);
+        if (selectedMonthId) {
+          await fetchMonthData(selectedMonthId);
+        }
         console.log('App loaded successfully');
       } catch (err) {
         console.error('Error during init:', err);
@@ -381,26 +416,48 @@ function AppWrapper() {
       }
     };
     init();
-  }, []);
+  }, [userProfile?.uid, authLoading]); // Only re-run when user changes, not on profile object changes if possible
+
+  useEffect(() => {
+    if (selectedMonthId && !authLoading && userProfile) {
+      fetchMonthData(selectedMonthId);
+    }
+  }, [selectedMonthId]);
+
+  // Remove the redundant effector at line 455 if it was there (I'll check range)
 
   const fetchOperationDates = async () => {
-    if (!selectedMonthId) return;
+    if (!selectedMonthId || !userProfile) return;
     const q = query(collection(db, 'operationDates'), where('monthId', '==', selectedMonthId));
     const snapshot = await getDocs(q);
     setOperationDates(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as OperationDate)));
   };
 
   const fetchEvaluations = async () => {
-    const snapshot = await getDocs(collection(db, 'evaluations'));
+    if (!userProfile) return;
+    let q = query(collection(db, 'evaluations'));
+    if (isColaborador) {
+      q = query(q, where('uid', '==', userProfile?.uid));
+    } else if (isGestor && userProfile.setor) {
+      const sectors = Array.isArray(userProfile.setor) ? userProfile.setor : [userProfile.setor];
+      const sectorIds = sectors.map(s => normalizeId(s));
+      if (sectorIds.length > 0) {
+        q = query(q, where('sectorId', 'in', sectorIds));
+      }
+    }
+    const snapshot = await getDocs(q);
     setEvaluations(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DevelopmentEvaluation)));
   };
 
   const fetchSectorHighlights = async () => {
-    const snapshot = await getDocs(collection(db, 'sectorHighlights'));
+    if (!userProfile) return;
+    const q = query(collection(db, 'sectorHighlights'));
+    const snapshot = await getDocs(q);
     setSectorHighlights(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as SectorHighlight)));
   };
 
   const fetchSectorOverrides = async () => {
+    if (!userProfile) return;
     const snapshot = await getDocs(collection(db, 'sectorOverrides'));
     const overrides: Record<string, Partial<Sector>> = {};
     snapshot.docs.forEach(doc => {
@@ -409,13 +466,8 @@ function AppWrapper() {
     setSectorOverrides(overrides);
   };
 
-  useEffect(() => {
-    if (selectedMonthId) {
-      fetchMonthData(selectedMonthId);
-    }
-  }, [selectedMonthId]);
-
   const fetchMonths = async () => {
+    if (!userProfile) return;
     const q = query(collection(db, 'months'), orderBy('createdAt', 'desc'));
     const snapshot = await getDocs(q);
     const monthsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Month));
@@ -518,11 +570,30 @@ function AppWrapper() {
   };
 
   const fetchMonthData = async (monthId: string) => {
+    if (!userProfile || !monthId) return;
     try {
+      let colQuery = query(collection(db, 'collaborators'), where('monthId', '==', monthId));
+      let indQuery = query(collection(db, 'indicators'), where('monthId', '==', monthId));
+      let valQuery = query(collection(db, 'dataValues'), where('monthId', '==', monthId));
+
+      if (isAdmin) {
+        // Admin gets all
+      } else if (isGestor && userProfile?.setor) {
+        const sectors = Array.isArray(userProfile.setor) ? userProfile.setor : [userProfile.setor];
+        const sectorIds = sectors.map(s => normalizeId(s));
+        if (sectorIds.length > 0) {
+          colQuery = query(colQuery, where('sectorId', 'in', sectorIds));
+          indQuery = query(indQuery, where('sectorId', 'in', sectorIds));
+        }
+        console.log("FETCH MONTH DATA (LEADER): SectorIDs", sectorIds);
+      } else if (isColaborador) {
+        colQuery = query(colQuery, where('uid', '==', userProfile?.uid));
+      }
+
       const [colSnap, indSnap, valSnap, highSnap, dateSnap] = await Promise.all([
-        getDocs(query(collection(db, 'collaborators'), where('monthId', '==', monthId))),
-        getDocs(query(collection(db, 'indicators'), where('monthId', '==', monthId))),
-        getDocs(query(collection(db, 'dataValues'), where('monthId', '==', monthId))),
+        getDocs(colQuery),
+        getDocs(indQuery),
+        getDocs(valQuery),
         getDocs(query(collection(db, 'sectorHighlights'), where('monthId', '==', monthId))),
         getDocs(query(collection(db, 'operationDates'), where('monthId', '==', monthId)))
       ]);
@@ -630,7 +701,7 @@ function AppWrapper() {
     });
   };
 
-  const handleSaveValue = async (indicatorId: string, collaboratorId: string, value: string | number, date?: string) => {
+  const handleSaveValue = useCallback(async (indicatorId: string, collaboratorId: string, value: string | number, date?: string) => {
     const indicator = indicators.find(i => i.id === indicatorId);
     let finalValue = value;
     
@@ -664,9 +735,9 @@ function AppWrapper() {
       });
     }
     fetchMonthData(selectedMonthId);
-  };
+  }, [indicators, dataValues, selectedMonthId, activeOperation]);
 
-  const handleReorderIndicators = async (reorderedIndicators: Indicator[]) => {
+  const handleReorderIndicators = useCallback(async (reorderedIndicators: Indicator[]) => {
     const batch = writeBatch(db);
     reorderedIndicators.forEach((ind, index) => {
       const ref = doc(db, 'indicators', ind.id);
@@ -677,9 +748,9 @@ function AppWrapper() {
       const otherInds = prev.filter(i => !reorderedIndicators.map(r => r.id).includes(i.id));
       return [...otherInds, ...reorderedIndicators.map((ind, index) => ({ ...ind, order: index }))].sort((a, b) => (a.order || 0) - (b.order || 0));
     });
-  };
+  }, []);
 
-  const handleReorderCollaborators = async (reorderedCollaborators: Collaborator[]) => {
+  const handleReorderCollaborators = useCallback(async (reorderedCollaborators: Collaborator[]) => {
     const batch = writeBatch(db);
     reorderedCollaborators.forEach((col, index) => {
       const ref = doc(db, 'collaborators', col.id);
@@ -690,7 +761,7 @@ function AppWrapper() {
       const otherCols = prev.filter(c => !reorderedCollaborators.map(r => r.id).includes(c.id));
       return [...otherCols, ...reorderedCollaborators.map((col, index) => ({ ...col, order: index }))].sort((a, b) => (a.order || 0) - (b.order || 0));
     });
-  };
+  }, []);
 
   const handleAddDate = async (date: string) => {
     if (!selectedMonthId) return;
@@ -715,7 +786,7 @@ function AppWrapper() {
     }
   };
 
-  const handleToggleHighlight = async (sectorId: string, monthId: string, collaboratorId: string) => {
+  const handleToggleHighlight = useCallback(async (sectorId: string, monthId: string, collaboratorId: string) => {
     const existing = sectorHighlights.find(h => h.sectorId === sectorId && h.monthId === monthId);
     
     if (existing) {
@@ -735,15 +806,33 @@ function AppWrapper() {
       });
     }
     fetchMonthData(monthId);
-  };
+  }, [sectorHighlights]);
   const handleAddCollaborator = async (data: Partial<Collaborator>) => {
     const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
     if (editingCollaborator) {
-      await updateDoc(doc(db, 'collaborators', editingCollaborator.id), cleanData);
+      // Sync update to ALL months for this specific collaborator (using UID or name/sector if UID missing)
+      const batch = writeBatch(db);
+      
+      let q;
+      if (editingCollaborator.uid) {
+        q = query(collection(db, 'collaborators'), where('uid', '==', editingCollaborator.uid));
+      } else {
+        q = query(collection(db, 'collaborators'), 
+          where('name', '==', editingCollaborator.name), 
+          where('sectorId', '==', editingCollaborator.sectorId)
+        );
+      }
+      
+      const snapshot = await getDocs(q);
+      snapshot.docs.forEach(d => {
+        batch.update(d.ref, cleanData);
+      });
+      await batch.commit();
+      console.log(`Updated collaborator in ${snapshot.docs.length} months`);
     } else {
       let finalData = { ...cleanData };
       
-      // Replicate photo logic: find existing collaborator with same name and sector
+      // Replicate photo logic
       if (!finalData.avatarUrl && finalData.name) {
         try {
           const q = query(
@@ -753,11 +842,7 @@ function AppWrapper() {
           );
           const querySnapshot = await getDocs(q);
           if (!querySnapshot.empty) {
-            // Get all collaborators with this name/sector
             const existingColabs = querySnapshot.docs.map(d => d.data() as Collaborator);
-            
-            // To follow "oldest to newest", we'd need to know the month order.
-            // For now, we'll just find the first one that has an avatarUrl.
             const withPhoto = existingColabs.find(c => c.avatarUrl);
             if (withPhoto) {
               finalData.avatarUrl = withPhoto.avatarUrl;
@@ -768,11 +853,19 @@ function AppWrapper() {
         }
       }
 
-      await addDoc(collection(db, 'collaborators'), {
-        ...finalData,
-        monthId: selectedMonthId,
-        sectorId: activeSectorId
-      });
+      // Add to ALL months
+      const batch = writeBatch(db);
+      for (const m of months) {
+        const ref = doc(collection(db, 'collaborators'));
+        batch.set(ref, {
+          ...finalData,
+          monthId: m.id,
+          sectorId: activeSectorId,
+          createdAt: serverTimestamp()
+        });
+      }
+      await batch.commit();
+      console.log(`Added collaborator to ${months.length} months`);
     }
     fetchMonthData(selectedMonthId);
     setIsCollaboratorModalOpen(false);
@@ -782,36 +875,35 @@ function AppWrapper() {
   const handleAddIndicator = async (data: Partial<Indicator>) => {
     const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
     if (editingIndicator) {
-      await updateDoc(doc(db, 'indicators', editingIndicator.id), cleanData);
+      // Sync update to ALL months for this indicator (using name/sector as key)
+      const batch = writeBatch(db);
+      const q = query(collection(db, 'indicators'), 
+        where('name', '==', editingIndicator.name), 
+        where('sectorId', '==', editingIndicator.sectorId)
+      );
+      const snapshot = await getDocs(q);
+      snapshot.docs.forEach(d => {
+        batch.update(d.ref, cleanData);
+      });
+      await batch.commit();
+      console.log(`Updated indicator in ${snapshot.docs.length} months`);
     } else {
       const targetSectorId = data.sectorId || activeSectorId;
       
-      // If adding from General view, add to all months
-      if (activeSectorId.startsWith('general')) {
-        const batch = writeBatch(db);
-        for (const m of months) {
-          const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === m.id);
-          const ref = doc(collection(db, 'indicators'));
-          batch.set(ref, {
-            ...cleanData,
-            monthId: m.id,
-            sectorId: targetSectorId,
-            order: sectorIndicators.length,
-            isGeneral: true,
-            isSectorOnly: true
-          });
-        }
-        await batch.commit();
-      } else {
-        const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === selectedMonthId);
-        await addDoc(collection(db, 'indicators'), {
+      const batch = writeBatch(db);
+      for (const m of months) {
+        const sectorIndicators = indicators.filter(i => i.sectorId === targetSectorId && i.monthId === m.id);
+        const ref = doc(collection(db, 'indicators'));
+        batch.set(ref, {
           ...cleanData,
-          monthId: selectedMonthId,
+          monthId: m.id,
           sectorId: targetSectorId,
           order: sectorIndicators.length,
-          isGeneral: false
+          isGeneral: activeSectorId.startsWith('general')
         });
       }
+      await batch.commit();
+      console.log(`Added indicator to ${months.length} months`);
     }
     fetchMonthData(selectedMonthId);
     setIsIndicatorModalOpen(false);
@@ -880,6 +972,12 @@ function AppWrapper() {
       const rows = evaluations
         .filter(e => {
           const collab = collaborators.find(c => c.id === e.collaboratorId);
+          if (isColaborador) return collab?.uid === userProfile?.uid && e.monthId === selectedMonthId;
+          if (isGestor) {
+            const sectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || ''];
+            const sectorIds = sectors.map(s => normalizeId(s));
+            return sectorIds.includes(collab?.sectorId || '') && e.monthId === selectedMonthId;
+          }
           return e.monthId === selectedMonthId && (devSelectedSectorId === 'all' || collab?.sectorId === devSelectedSectorId);
         })
         .map(e => {
@@ -914,22 +1012,24 @@ function AppWrapper() {
       const sectorIndicators = indicators.filter(i => normalizeId(i.sectorId) === normalizeId(activeSectorId));
       const sectorCollaborators = collaborators.filter(c => normalizeId(c.sectorId) === normalizeId(activeSectorId));
       
-      const headers = ['Indicador', ...sectorCollaborators.map(c => c.name), 'Total Setor'];
-      const rows = sectorIndicators.map(ind => {
-        const colValues = sectorCollaborators.map(c => {
-          const val = dataValues.find(dv => 
-            dv.indicatorId === ind.id && 
-            dv.collaboratorId === c.id && 
-            (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation)
+      const headers = ['Consultor', 'Cargo', 'Setor', 'Nota Evaluation', 'Status', ...sectorIndicators.map(i => i.name)];
+      const rows = sectorCollaborators.map(c => {
+        const evalData = evaluations.find(e => e.collaboratorId === c.id && e.monthId === selectedMonthId);
+        const score = evalData ? (evalData.technicalAverage + evalData.behavioralAverage) / 2 : 0;
+        // @ts-ignore
+        const cargo = c.cargo || (c.role === 'lider' ? 'Líder' : 'Colaborador');
+        const status = 'Ativo';
+        
+        const indValues = sectorIndicators.map(ind => {
+          const val = dataValues.find(v => 
+            v.indicatorId === ind.id && 
+            v.collaboratorId === c.id &&
+            (v.operation === activeOperation || v.operation === 'both' || !v.operation)
           )?.value;
-          return formatValue(val, ind.type);
+          return val === undefined ? '-' : val;
         });
-        const sectorVal = dataValues.find(dv => 
-          dv.indicatorId === ind.id && 
-          dv.collaboratorId === 'sector' &&
-          (dv.operation === activeOperation || dv.operation === 'both' || !dv.operation)
-        )?.value;
-        return [ind.name, ...colValues, sectorVal !== undefined ? formatValue(sectorVal, ind.type) : '-'];
+
+        return [c.name, cargo, sector?.name || '', score.toFixed(1), status, ...indValues];
       });
 
       const csvContent = [
@@ -1038,6 +1138,32 @@ function AppWrapper() {
     }
   };
 
+  if (authLoading) return (
+    <div className="h-screen w-full flex items-center justify-center bg-gray-50 font-medium text-gray-500">
+      Carregando sessão...
+    </div>
+  );
+
+  if (currentUser && !userProfile) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center space-y-6">
+        <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto text-red-600">
+          <AlertCircle size={32} />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Acesso não autorizado</h2>
+        <p className="text-gray-500">Seu e-mail ({currentUser.email}) não está vinculado a um perfil no sistema. Entre em contato com o administrador.</p>
+        <button 
+          onClick={() => logout()}
+          className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold"
+        >
+          Voltar para o Login
+        </button>
+      </div>
+    </div>
+  );
+
+  if (!userProfile) return <Login />;
+
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-gray-50">
@@ -1050,21 +1176,33 @@ function AppWrapper() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex">
+    <div className="min-h-screen bg-[#F8F9FA] flex w-full overflow-hidden">
       {/* Overlay for mobile */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30 lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Sidebar */}
       <aside className={cn(
-        "w-64 bg-white border-r border-gray-100 flex flex-col fixed h-full z-40 transition-transform duration-300",
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
-        <div className="p-8 flex items-center justify-between">
+        "fixed lg:static inset-y-0 left-0 z-40 bg-white border-r border-gray-100 transition-all duration-300 flex flex-col",
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0 lg:w-0 lg:opacity-0"
+      )} style={{ 
+        minWidth: isSidebarOpen ? '260px' : '0', 
+        width: isSidebarOpen ? '260px' : '0',
+        flexShrink: 0, 
+        height: '100vh',
+        overflowY: 'auto',
+        overflowX: 'hidden'
+      }}>
+        <div className="p-8 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-[#FF6B00] rounded-xl flex items-center justify-center shadow-lg shadow-orange-200">
               <TrendingUp className="text-white w-6 h-6" />
@@ -1082,30 +1220,51 @@ function AppWrapper() {
           </button>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
-          <NavItem 
-            icon={<LayoutDashboard size={20} />} 
-            label="Visão Geral" 
-            active={activeSectorId === 'overview'} 
-            onClick={() => { 
-              setActiveSectorId('overview'); 
-              if (window.innerWidth < 1024) setIsSidebarOpen(false); 
-            }} 
-          />
-          <NavItem 
-            icon={<BrainCircuit size={20} />} 
-            label="Avaliação" 
-            active={activeSectorId === 'development'} 
-            onClick={() => { 
-              setActiveSectorId('development'); 
-              if (window.innerWidth < 1024) setIsSidebarOpen(false); 
-            }} 
-          />
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto overflow-x-hidden pt-2 pb-8 custom-scrollbar scroll-smooth">
+          {(isAdmin || isGestor || isColaborador) && (
+            <NavItem 
+              icon={<BrainCircuit size={20} />} 
+              label={isColaborador ? "Minha Avaliação" : "Avaliação de Equipe"} 
+              active={activeSectorId === 'development'} 
+              onClick={() => { 
+                setActiveSectorId('development'); 
+                setActiveView('dashboard');
+                if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+              }} 
+            />
+          )}
+
+          {(isAdmin) && (
+            <NavItem 
+              icon={<LayoutDashboard size={20} />} 
+              label={isAdmin ? "Visão Geral" : "Dashboard de Performance"} 
+              active={activeSectorId === 'overview'} 
+              onClick={() => { 
+                setActiveSectorId('overview'); 
+                setActiveView('dashboard');
+                if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+              }} 
+            />
+          )}
+
+          {isColaborador && (
+            <NavItem 
+              icon={<Award size={20} />} 
+              label="Meu Resultado" 
+              active={activeSectorId === 'my-results'} 
+              onClick={() => { 
+                setActiveSectorId('my-results'); 
+                setActiveView('dashboard');
+                if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+              }} 
+            />
+          )}
           
           {/* Indicador Geral Expandable */}
-          <div>
-            <button 
-              onClick={() => setIsGeneralExpanded(!isGeneralExpanded)}
+          {(isAdmin || isGestor) && (
+            <div>
+              <button 
+                onClick={() => setIsGeneralExpanded(!isGeneralExpanded)}
               className={cn(
                 "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group",
                 activeSectorId.startsWith('general') ? "bg-orange-50 text-[#FF6B00]" : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
@@ -1129,6 +1288,7 @@ function AppWrapper() {
                     onClick={() => {
                       setActiveSectorId('general-sittax');
                       setActiveOperation('sittax');
+                      setActiveView('dashboard');
                       if (window.innerWidth < 1024) setIsSidebarOpen(false);
                     }}
                     className={cn(
@@ -1171,6 +1331,7 @@ function AppWrapper() {
               )}
             </AnimatePresence>
           </div>
+          )}
 
           {/* Setores Expandable */}
           <div>
@@ -1189,7 +1350,15 @@ function AppWrapper() {
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden space-y-1 mt-1"
                 >
-                  {SECTORS.map(sector => {
+                  {SECTORS.filter(s => {
+                    if (isAdmin) return true;
+                    if (isGestor || isColaborador) {
+                      const profileSectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || ''];
+                      const profileSectorIds = profileSectors.map(s => normalizeId(s));
+                      return profileSectorIds.includes(normalizeId(s.name));
+                    }
+                    return true;
+                  }).map(sector => {
                     const IconComponent = {
                       Calendar,
                       UserPlus,
@@ -1206,6 +1375,7 @@ function AppWrapper() {
                         active={activeSectorId === sector.id} 
                         onClick={() => { 
                           setActiveSectorId(sector.id); 
+                          setActiveView('dashboard');
                           if (window.innerWidth < 1024) setIsSidebarOpen(false); 
                         }} 
                       />
@@ -1215,21 +1385,61 @@ function AppWrapper() {
               )}
             </AnimatePresence>
           </div>
+          {isAdmin || isGestor ? (
+            <div className="pt-6 border-t border-gray-50 mt-6">
+              <p className="px-4 mb-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Administração</p>
+              <NavItem 
+                icon={<Users size={20} />} 
+                label="Usuários" 
+                active={activeView === 'users'} 
+                onClick={() => { 
+                  setActiveView('users'); 
+                  if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+                }} 
+              />
+            </div>
+          ) : null}
+
+          <div className="pt-2">
+            <NavItem 
+              icon={<Settings size={20} />} 
+              label="Configurações" 
+              active={activeView === 'settings'} 
+              onClick={() => { 
+                setActiveView('settings'); 
+                if (window.innerWidth < 1024) setIsSidebarOpen(false); 
+              }} 
+            />
+          </div>
         </nav>
 
-        <div className="p-4 mt-auto">
-          <div className="bg-orange-50 rounded-2xl p-4">
-            <p className="text-xs font-semibold text-[#FF6B00] uppercase mb-1">Status</p>
-            <p className="text-sm font-bold text-gray-900">Dashboard Ativo</p>
+        <div className="p-4 mt-auto border-t border-gray-100">
+          <div className="flex items-center gap-3 mb-4 px-2">
+            <div className="w-10 h-10 rounded-xl bg-gray-100 overflow-hidden border border-gray-200">
+              <img 
+                src={userProfile?.fotoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.nome || 'User')}&background=random`} 
+                className="w-full h-full object-cover" 
+                alt={userProfile?.nome} 
+                referrerPolicy="no-referrer"
+              />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <p className="text-sm font-bold text-gray-900 truncate">{userProfile?.nome}</p>
+              <p className="text-[10px] text-gray-500 truncate uppercase font-semibold">{userProfile?.cargo || userProfile?.role}</p>
+            </div>
           </div>
+          <button 
+            onClick={() => logout()}
+            className="w-full flex items-center gap-2 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-all font-bold text-sm"
+          >
+            <X size={18} />
+            Sair do Sistema
+          </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className={cn(
-        "flex-1 min-h-screen flex flex-col w-full transition-all duration-300",
-        isSidebarOpen ? "lg:ml-64" : "lg:ml-0"
-      )}>
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto w-full bg-gray-50/30">
         {/* Topbar */}
         <header className="h-auto lg:h-20 bg-white border-b border-gray-100 flex flex-col lg:flex-row items-center justify-between px-4 py-4 lg:py-0 lg:px-8 sticky top-0 z-30 gap-4 lg:gap-0">
           <div className="flex items-center justify-between w-full lg:w-auto gap-4 lg:gap-6">
@@ -1252,13 +1462,15 @@ function AppWrapper() {
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                   </select>
-                  <button 
-                    onClick={() => setIsEditMonthModalOpen(true)}
-                    className="p-1 text-gray-400 hover:text-[#FF6B00] transition-colors"
-                    title="Editar Mês"
-                  >
-                    <Edit2 size={14} />
-                  </button>
+                  {isAdmin && (
+                    <button 
+                      onClick={() => setIsEditMonthModalOpen(true)}
+                      className="p-1 text-gray-400 hover:text-[#FF6B00] transition-colors"
+                      title="Editar Mês"
+                    >
+                      <Settings size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1290,22 +1502,49 @@ function AppWrapper() {
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto justify-end">
-            <Button variant="outline" size="sm" onClick={() => setIsNewMonthModalOpen(true)} className="flex-1 lg:flex-none text-[10px] sm:text-sm">
-              <Plus size={16} />
-              <span className="hidden xs:inline">Novo Mês</span>
-              <span className="xs:hidden">Novo</span>
-            </Button>
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => setIsNewMonthModalOpen(true)} className="flex-1 lg:flex-none text-[10px] sm:text-sm">
+                <Plus size={16} />
+                <span className="hidden xs:inline">Novo Mês</span>
+                <span className="xs:hidden">Novo</span>
+              </Button>
+            )}
             <Button size="sm" onClick={handleExport} className="flex-1 lg:flex-none text-[10px] sm:text-sm">
               <Download size={16} />
               Exportar
             </Button>
+            <div className="flex items-center gap-2 ml-2 pl-4 border-l border-gray-100">
+               <div className="hidden sm:flex flex-col items-end text-right">
+                  <p className="text-xs font-bold text-gray-900">{userProfile?.nome}</p>
+                  <p className="text-[10px] text-[#FF6B00] font-bold uppercase tracking-wider">
+                    {Array.isArray(userProfile?.setor) ? userProfile.setor.join(' & ') : userProfile?.setor}
+                  </p>
+               </div>
+               <div className="w-9 h-9 rounded-full border-2 border-[#FF6B00]/20 p-0.5">
+                  <img 
+                    src={userProfile?.fotoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.nome || 'User')}&background=random`} 
+                    className="w-full h-full rounded-full object-cover"
+                    alt="Profile"
+                    referrerPolicy="no-referrer"
+                  />
+               </div>
+            </div>
           </div>
         </header>
 
-        <div className="p-4 sm:p-6 lg:p-8 flex-1 max-w-[1920px] mx-auto w-full">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeSectorId + selectedMonthId}
+        <div className="p-4 sm:p-6 lg:p-8 flex-1 max-w-[1920px] mx-auto w-full overflow-y-auto">
+          {activeView === 'users' ? (
+            <div className="w-full overflow-x-auto">
+              <UserManagement />
+            </div>
+          ) : activeView === 'settings' ? (
+            <div className="w-full">
+              <SettingsView userProfile={userProfile} />
+            </div>
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeSectorId + selectedMonthId + activeView}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
@@ -1322,6 +1561,15 @@ function AppWrapper() {
                   activeOperation={activeOperation}
                   onNavigate={setActiveSectorId}
                 />
+              ) : activeSectorId === 'my-results' ? (
+                <MyResultsView 
+                  userProfile={userProfile}
+                  collaborators={collaborators}
+                  indicators={indicators}
+                  dataValues={dataValues}
+                  evaluations={evaluations}
+                  monthId={selectedMonthId}
+                />
               ) : activeSectorId === 'development' ? (
                 <DevelopmentView 
                   sectors={SECTORS}
@@ -1332,10 +1580,44 @@ function AppWrapper() {
                   onSectorChange={setDevSelectedSectorId}
                   onSaveEvaluation={async (evalData) => {
                     const existing = evaluations.find(e => e.collaboratorId === evalData.collaboratorId && e.monthId === evalData.monthId);
+                    const evalDataToUpdate: any = { 
+                      ...evalData, 
+                      liderId: userProfile?.uid || "",
+                      liderNome: userProfile?.nome || "",
+                      updatedAt: serverTimestamp() 
+                    };
+                    
+                    // Force null for manualClassification if undefined to avoid Firebase error
+                    if (evalDataToUpdate.manualClassification === undefined) {
+                      evalDataToUpdate.manualClassification = null;
+                    }
+                    if (evalDataToUpdate.comments === undefined) {
+                      evalDataToUpdate.comments = "";
+                    }
+
                     if (existing) {
-                      await updateDoc(doc(db, 'evaluations', existing.id), { ...evalData, updatedAt: serverTimestamp() });
+                      await updateDoc(doc(db, 'evaluations', existing.id), evalDataToUpdate);
                     } else {
-                      await addDoc(collection(db, 'evaluations'), { ...evalData, updatedAt: serverTimestamp() });
+                      const colab = collaborators.find(c => c.id === evalData.collaboratorId);
+                      const profileSectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || "onboarding"];
+                      const defaultSectorId = normalizeId(profileSectors[0]);
+                      const evalDataToAdd: any = { 
+                        ...evalData, 
+                        uid: colab?.uid || "",
+                        liderId: userProfile?.uid || "",
+                        liderNome: userProfile?.nome || "",
+                        sectorId: colab?.sectorId || defaultSectorId,
+                        updatedAt: serverTimestamp() 
+                      };
+                      
+                      if (evalDataToAdd.manualClassification === undefined) {
+                        evalDataToAdd.manualClassification = null;
+                      }
+                      if (evalDataToAdd.comments === undefined) {
+                        evalDataToAdd.comments = "";
+                      }
+
+                      await addDoc(collection(db, 'evaluations'), evalDataToAdd);
                     }
                     fetchEvaluations();
                   }}
@@ -1401,7 +1683,8 @@ function AppWrapper() {
               )}
             </motion.div>
           </AnimatePresence>
-        </div>
+        )}
+      </div>
       </main>
 
       {/* Modals */}
@@ -1512,6 +1795,178 @@ function AppWrapper() {
   );
 }
 
+// --- My Results View ---
+
+function MyResultsView({ 
+  userProfile, 
+  collaborators,
+  indicators, 
+  dataValues, 
+  evaluations, 
+  monthId 
+}: { 
+  userProfile: User | null, 
+  collaborators: Collaborator[],
+  indicators: Indicator[], 
+  dataValues: DataValue[], 
+  evaluations: DevelopmentEvaluation[],
+  monthId: string
+}) {
+  const myColab = useMemo(() => collaborators.find(c => c.uid === userProfile?.uid && c.monthId === monthId), [collaborators, userProfile, monthId]);
+  const myEval = useMemo(() => evaluations.find(e => e.uid === userProfile?.uid && e.monthId === monthId), [userProfile, monthId]);
+  
+  const myData = useMemo(() => {
+    if (!myColab) return [];
+    return dataValues.filter(v => v.collaboratorId === myColab.id && v.monthId === monthId);
+  }, [myColab, dataValues, monthId]);
+
+  if (!myColab) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-gray-400">
+          <Award size={40} />
+        </div>
+        <div>
+          <h3 className="text-xl font-bold text-gray-900">Nenhum dado encontrado</h3>
+          <p className="text-gray-500">Você ainda não possui registros para este mês.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const getClassificationStyles = (classification: DevelopmentClassification) => {
+    switch (classification) {
+      case 'DELEGAR': return { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', badge: 'bg-green-500' };
+      case 'MOTIVAR': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-500' };
+      case 'GUIAR': return { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', badge: 'bg-yellow-500' };
+      case 'DIRECIONAR': return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', badge: 'bg-red-500' };
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2">Meu Resultado</h2>
+          <p className="text-gray-500 font-medium">Acompanhe seu desempenho e avaliações individuais.</p>
+        </div>
+        {myEval && (
+           <div className={cn(
+             "px-6 py-3 rounded-2xl border-2 flex items-center gap-3",
+             getClassificationStyles(myEval.manualClassification || myEval.classification).bg,
+             getClassificationStyles(myEval.manualClassification || myEval.classification).border,
+             getClassificationStyles(myEval.manualClassification || myEval.classification).text
+           )}>
+             <div className={cn("w-3 h-3 rounded-full", getClassificationStyles(myEval.manualClassification || myEval.classification).badge)} />
+             <span className="font-black text-lg tracking-widest">{myEval.manualClassification || myEval.classification}</span>
+           </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="p-8 flex flex-col items-center text-center space-y-4">
+           <div className="w-24 h-24 rounded-full border-4 border-orange-100 p-1">
+              <img 
+                src={userProfile?.fotoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.nome || 'User')}&background=random`} 
+                className="w-full h-full rounded-full object-cover" 
+                alt="Me" 
+                referrerPolicy="no-referrer"
+              />
+           </div>
+           <div>
+              <h3 className="text-xl font-bold text-gray-900">{userProfile?.nome}</h3>
+              <p className="text-sm text-gray-500 font-medium uppercase tracking-wide">{userProfile?.cargo}</p>
+           </div>
+           <div className="w-full pt-4 border-t border-gray-50 grid grid-cols-2 gap-4">
+              <div>
+                 <p className="text-[10px] font-bold text-gray-400 uppercase">Setor</p>
+                 <p className="text-sm font-bold text-gray-900">{userProfile?.setor}</p>
+              </div>
+              <div>
+                 <p className="text-[10px] font-bold text-gray-400 uppercase">Meta Individual</p>
+                 <p className="text-sm font-bold text-gray-900">{myColab.meta}%</p>
+              </div>
+           </div>
+        </Card>
+
+        <Card className="p-8 md:col-span-2">
+           <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+              <TrendingUp className="text-[#FF6B00]" size={20} />
+              Principais Indicadores
+           </h3>
+           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {indicators.filter(i => {
+                const sId = normalizeId(i.sectorId);
+                const profileSectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || ''];
+                return profileSectors.some(s => normalizeId(s) === sId);
+              }).slice(0, 4).map(ind => {
+                const val = myData.find(v => v.indicatorId === ind.id);
+                return (
+                  <div key={ind.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 mb-1">{ind.name}</p>
+                      <p className="text-xl font-black text-gray-900">
+                        {val ? (
+                          ind.type === 'percentage' ? `${val.value}%` :
+                          ind.type === 'currency' ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(val.value)) :
+                          val.value
+                        ) : '-'}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+           </div>
+        </Card>
+      </div>
+
+      {myEval && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+           <Card className="p-8">
+              <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                 <Target className="text-[#FF6B00]" size={20} />
+                 Média de Competências
+              </h3>
+              <div className="space-y-6">
+                 <div>
+                    <div className="flex justify-between mb-2">
+                       <span className="text-sm font-bold text-gray-700">Técnico</span>
+                       <span className="text-sm font-black text-[#FF6B00]">{myEval.technicalAverage.toFixed(1)} / 4.0</span>
+                    </div>
+                    <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                       <div className="bg-[#FF6B00] h-full" style={{ width: `${(myEval.technicalAverage / 4) * 100}%` }} />
+                    </div>
+                 </div>
+                 <div>
+                    <div className="flex justify-between mb-2">
+                       <span className="text-sm font-bold text-gray-700">Comportamental</span>
+                       <span className="text-sm font-black text-[#FF6B00]">{myEval.behavioralAverage.toFixed(1)} / 4.0</span>
+                    </div>
+                    <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                       <div className="bg-[#FF6B00] h-full" style={{ width: `${(myEval.behavioralAverage / 4) * 100}%` }} />
+                    </div>
+                 </div>
+              </div>
+           </Card>
+
+           <Card className="p-8 flex flex-col justify-center items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center text-[#FF6B00]">
+                 <Calendar size={32} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Última Avaliação</p>
+                <p className="text-lg font-bold text-gray-900">{format(new Date(myEval.evaluationDate), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
+              </div>
+              <p className="text-sm text-gray-500 font-medium px-8 italic">
+                "O sucesso é a soma de pequenos esforços repetidos dia após dia."
+              </p>
+           </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Development View ---
 
 function DevelopmentView({ 
@@ -1535,13 +1990,26 @@ function DevelopmentView({
   onDeleteEvaluation: (id: string) => Promise<void>,
   onDeleteCollaborator: (id: string) => Promise<void>
 }) {
+  const { isAdmin, isGestor, isColaborador, userProfile } = useAuth();
   const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
   const [selectedColab, setSelectedColab] = useState<Collaborator | null>(null);
 
-  const sectorColabs = useMemo(() => 
-    collaborators.filter(c => (selectedSectorId === 'all' || c.sectorId === selectedSectorId) && c.monthId === monthId),
-    [collaborators, selectedSectorId, monthId]
-  );
+  const sectorColabs = useMemo(() => {
+    let filtered = collaborators.filter(c => c.monthId === monthId);
+    if (isColaborador) {
+      return filtered.filter(c => c.uid === userProfile?.uid);
+    }
+    if (isGestor) {
+      const sectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || ''];
+      const sectorIds = sectors.map(s => normalizeId(s));
+      // Ensure we only show collaborators for the leader's sectors and exclude the leader themselves
+      filtered = filtered.filter(c => sectorIds.includes(c.sectorId) && c.uid !== userProfile?.uid);
+    }
+    if (selectedSectorId !== 'all') {
+      filtered = filtered.filter(c => c.sectorId === selectedSectorId);
+    }
+    return filtered.filter(Boolean);
+  }, [collaborators, selectedSectorId, monthId, isColaborador, isGestor, userProfile]);
 
   const sectorEvals = useMemo(() => 
     evaluations.filter(e => e.monthId === monthId && sectorColabs.some(c => c.id === e.collaboratorId)),
@@ -1579,18 +2047,33 @@ function DevelopmentView({
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-gray-100 shadow-sm">
             <ClipboardList size={16} className="text-[#FF6B00]" />
-            <span className="text-sm font-bold text-gray-700">Total no Setor: {sectorEvals.length}</span>
+            <span className="text-sm font-bold text-gray-700">Total: {sectorEvals.length}</span>
           </div>
-          <Select 
-            label="Filtrar por Setor"
-            value={selectedSectorId}
-            onChange={(e) => onSectorChange(e.target.value)}
-            options={[
-              { value: 'all', label: 'Todos os Setores' },
-              ...sectors.map(s => ({ value: s.id, label: s.name }))
-            ]}
-            className="min-w-[200px]"
-          />
+          {(() => {
+            if (!isAdmin && !isGestor) return null;
+            
+            const availableSectors = isAdmin 
+              ? sectors 
+              : sectors.filter(s => {
+                  const profileSectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || ''];
+                  return profileSectors.some(ps => normalizeId(ps) === normalizeId(s.name));
+                });
+
+            if (availableSectors.length <= 1 && !isAdmin) return null;
+
+            return (
+              <Select 
+                label="Filtrar por Setor"
+                value={selectedSectorId}
+                onChange={(e) => onSectorChange(e.target.value)}
+                options={[
+                  { value: 'all', label: 'Todos os Setores' },
+                  ...availableSectors.map(s => ({ value: s.id, label: s.name }))
+                ]}
+                className="min-w-[200px]"
+              />
+            );
+          })()}
         </div>
       </div>
 
@@ -1681,48 +2164,70 @@ function DevelopmentView({
                     <div className="grid grid-cols-2 gap-4 w-full pt-2">
                       <div className="text-center">
                         <p className="text-[10px] font-bold text-gray-400 uppercase">Skill</p>
-                        <p className="text-sm font-black text-gray-700">{evalData.technicalAverage.toFixed(1)}</p>
+                        <p className="text-sm font-black text-gray-700">{evalData.technicalAverage?.toFixed(1) || '0.0'}</p>
                       </div>
                       <div className="text-center">
                         <p className="text-[10px] font-bold text-gray-400 uppercase">Vontade</p>
-                        <p className="text-sm font-black text-gray-700">{evalData.behavioralAverage.toFixed(1)}</p>
+                        <p className="text-sm font-black text-gray-700">{evalData.behavioralAverage?.toFixed(1) || '0.0'}</p>
                       </div>
                     </div>
                   )}
 
                   <div className="flex gap-2 w-full">
-                    <Button 
-                      variant={evalData ? "outline" : "primary"} 
-                      size="sm" 
-                      className="flex-1"
-                      onClick={() => {
-                        setSelectedColab(colab);
-                        setIsEvalModalOpen(true);
-                      }}
-                    >
-                      {evalData ? "Editar" : "Avaliar"}
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="px-3 text-gray-400 hover:text-red-500 hover:border-red-200"
-                      onClick={() => onDeleteCollaborator(colab.id)}
-                      title="Remover Colaborador"
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                    {evalData && (
+                    {(isAdmin || isGestor) && colab.uid !== userProfile?.uid ? (
                       <Button 
-                        variant="danger" 
+                        variant={evalData ? "outline" : "primary"} 
                         size="sm" 
-                        className="px-3"
-                        onClick={() => onDeleteEvaluation(evalData.id)}
-                        title="Remover Avaliação"
+                        className="flex-1 text-[10px] sm:text-xs"
+                        onClick={() => {
+                          setSelectedColab(colab);
+                          setIsEvalModalOpen(true);
+                        }}
                       >
-                        <Trash2 size={14} />
+                        {evalData ? "Editar" : "Avaliar"}
                       </Button>
+                    ) : (
+                      evalData && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1 text-[10px] sm:text-xs"
+                          onClick={() => {
+                            setSelectedColab(colab);
+                            setIsEvalModalOpen(true);
+                          }}
+                        >
+                          Ver Resultado
+                        </Button>
+                      )
                     )}
                   </div>
+
+                  {(isAdmin || isGestor) && (
+                    <div className="flex gap-2 w-full pt-2 border-t border-gray-50">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1 text-gray-400 hover:text-red-500 hover:border-red-200"
+                        onClick={() => onDeleteCollaborator(colab.id)}
+                        title="Remover Colaborador"
+                      >
+                        <Trash2 size={14} className="mr-1" />
+                        Excluir
+                      </Button>
+                      {evalData && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1 text-gray-400 hover:text-red-600 border-dashed"
+                          onClick={() => onDeleteEvaluation(evalData.id)}
+                          title="Remover Avaliação"
+                        >
+                          Limpar
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Card>
             </div>
@@ -1740,6 +2245,7 @@ function DevelopmentView({
             collaborator={selectedColab}
             monthId={monthId}
             initialData={sectorEvals.find(e => e.collaboratorId === selectedColab.id)}
+            readOnly={isColaborador && !isAdmin && !isGestor}
             onSubmit={async (data) => {
               await onSaveEvaluation(data);
               setIsEvalModalOpen(false);
@@ -1758,18 +2264,21 @@ function DevelopmentEvaluationForm({
   monthId, 
   initialData, 
   onSubmit, 
-  onCancel 
+  onCancel,
+  readOnly = false
 }: { 
   collaborator: Collaborator, 
   monthId: string, 
   initialData?: DevelopmentEvaluation,
   onSubmit: (data: Partial<DevelopmentEvaluation>) => Promise<void>,
-  onCancel: () => void
+  onCancel: () => void,
+  readOnly?: boolean
 }) {
   const [evaluationDate, setEvaluationDate] = useState(initialData?.evaluationDate || format(new Date(), 'yyyy-MM-dd'));
   const [techScores, setTechScores] = useState<Record<string, number>>(initialData?.technicalScores || {});
   const [behaveScores, setBehaveScores] = useState<Record<string, number>>(initialData?.behavioralScores || {});
   const [manualClassification, setManualClassification] = useState<DevelopmentClassification | undefined>(initialData?.manualClassification);
+  const [comments, setComments] = useState(initialData?.comments || '');
   const [step, setStep] = useState<'date' | 'tech' | 'behave' | 'classification'>('date');
 
   const calculateAverages = () => {
@@ -1883,6 +2392,7 @@ function DevelopmentEvaluationForm({
                         <button
                           key={q}
                           type="button"
+                          disabled={readOnly}
                           onClick={() => setManualClassification(q)}
                           className={cn(
                             "p-3 rounded-xl text-[10px] font-black tracking-widest transition-all border-2",
@@ -1902,6 +2412,17 @@ function DevelopmentEvaluationForm({
                       ))}
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-gray-700">Comentários e Feedbacks</label>
+                    <textarea 
+                      value={comments}
+                      onChange={(e) => setComments(e.target.value)}
+                      readOnly={readOnly}
+                      className="w-full h-24 p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B00]/20 focus:border-[#FF6B00] resize-none"
+                      placeholder="Descreva os pontos de melhoria, elogios e planos de ação..."
+                    />
+                  </div>
                 </div>
               );
             })()}
@@ -1911,34 +2432,40 @@ function DevelopmentEvaluationForm({
 
       <div className="flex justify-between gap-3 pt-4 sticky bottom-0 bg-white pb-1">
         <Button variant="outline" onClick={step === 'date' ? onCancel : (step === 'tech' ? () => setStep('date') : (step === 'behave' ? () => setStep('tech') : () => setStep('behave')))} size="sm" className="flex-1 sm:flex-none">
-          {step === 'date' ? 'Cancelar' : 'Voltar'}
+          {readOnly ? 'Fechar' : (step === 'date' ? 'Cancelar' : 'Voltar')}
         </Button>
-        <Button 
-          size="sm"
-          disabled={!isStepComplete}
-          className="flex-1 sm:flex-none"
-          onClick={async () => {
-            if (step === 'date') setStep('tech');
-            else if (step === 'tech') setStep('behave');
-            else if (step === 'behave') setStep('classification');
-            else {
-              const { techAvg, behaveAvg, classification } = calculateAverages();
-              await onSubmit({
-                monthId,
-                collaboratorId: collaborator.id,
-                evaluationDate,
-                technicalScores: techScores,
-                behavioralScores: behaveScores,
-                technicalAverage: techAvg,
-                behavioralAverage: behaveAvg,
-                classification,
-                manualClassification
-              });
-            }
-          }}
-        >
-          {step === 'classification' ? 'Finalizar' : 'Próximo'}
-        </Button>
+        {!readOnly && (
+          <Button 
+            size="sm"
+            disabled={!isStepComplete}
+            className="flex-1 sm:flex-none"
+            onClick={async () => {
+              if (step === 'date') setStep('tech');
+              else if (step === 'tech') setStep('behave');
+              else if (step === 'behave') setStep('classification');
+              else {
+                const { techAvg, behaveAvg, classification } = calculateAverages();
+                const evalData: any = {
+                  monthId,
+                  collaboratorId: collaborator.id,
+                  evaluationDate,
+                  technicalScores: techScores,
+                  behavioralScores: behaveScores,
+                  technicalAverage: techAvg,
+                  behavioralAverage: behaveAvg,
+                  classification,
+                  comments
+                };
+                if (manualClassification) {
+                  evalData.manualClassification = manualClassification;
+                }
+                await onSubmit(evalData);
+              }
+            }}
+          >
+            {step === 'classification' ? 'Finalizar' : 'Próximo'}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -2009,6 +2536,7 @@ const SectorDashboard = React.memo(function SectorDashboard({
   onReorderIndicators: (items: Indicator[]) => void,
   onReorderCollaborators: (items: Collaborator[]) => void
 }) {
+  const { isAdmin, isGestor, isColaborador, userProfile } = useAuth();
   const safeIndicators = useMemo(() => indicators.filter(Boolean), [indicators]);
   const safeCollaborators = useMemo(() => collaborators.filter(Boolean), [collaborators]);
 
@@ -2088,16 +2616,20 @@ const SectorDashboard = React.memo(function SectorDashboard({
           <p className="text-xs sm:text-sm text-gray-500 font-medium">Gestão de indicadores e performance individual da equipe.</p>
         </div>
         <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
-          <Button variant="outline" onClick={onAddIndicator} className="flex-1 sm:flex-none text-[10px] sm:text-sm px-2 sm:px-4">
-            <Settings size={16} />
-            <span className="hidden xs:inline">Configurar Indicadores</span>
-            <span className="xs:hidden">KPIs</span>
-          </Button>
-          <Button onClick={onAddCollaborator} className="flex-1 sm:flex-none text-[10px] sm:text-sm px-2 sm:px-4">
-            <Plus size={16} />
-            <span className="hidden xs:inline">Novo Colaborador</span>
-            <span className="xs:hidden">Novo</span>
-          </Button>
+          {(isAdmin || isGestor) && (
+            <>
+              <Button variant="outline" onClick={onAddIndicator} className="flex-1 sm:flex-none text-[10px] sm:text-sm px-2 sm:px-4">
+                <Settings size={16} />
+                <span className="hidden xs:inline">Configurar Indicadores</span>
+                <span className="xs:hidden">KPIs</span>
+              </Button>
+              <Button onClick={onAddCollaborator} className="flex-1 sm:flex-none text-[10px] sm:text-sm px-2 sm:px-4">
+                <Plus size={16} />
+                <span className="hidden xs:inline">Novo Colaborador</span>
+                <span className="xs:hidden">Novo</span>
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -2154,34 +2686,40 @@ const SectorDashboard = React.memo(function SectorDashboard({
                           <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3 mt-4 sm:mt-2">
                             <div className="relative">
                               <img 
-                                src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
+                                src={c.avatarUrl || c.fotoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.name)}&background=random`} 
                                 alt={c.name} 
                                 className="w-10 h-10 sm:w-16 h-16 rounded-xl sm:rounded-2xl border-2 sm:border-4 border-white/20 bg-white/10 object-cover aspect-square shadow-lg transition-transform group-hover:scale-105"
                                 referrerPolicy="no-referrer"
                               />
                               <div className="flex gap-1 absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => onEvaluateCollaborator(c)}
-                                  className="text-white p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
-                                  style={{ backgroundColor: sector.color }}
-                                  title="Lançar Avaliação"
-                                >
-                                  <BrainCircuit size={10} />
-                                </button>
-                                <button 
-                                  onClick={() => onEditCollaborator(c)}
-                                  className="bg-white text-gray-900 p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
-                                  title="Editar Colaborador"
-                                >
-                                  <Edit2 size={10} />
-                                </button>
-                                <button 
-                                  onClick={() => onDeleteCollaborator(c.id)}
-                                  className="bg-white text-red-500 p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
-                                  title="Remover Colaborador"
-                                >
-                                  <Trash2 size={10} />
-                                </button>
+                                {(isAdmin || isGestor) && (
+                                  <button 
+                                    onClick={() => onEvaluateCollaborator(c)}
+                                    className="text-white p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                    style={{ backgroundColor: sector.color }}
+                                    title="Lançar Avaliação"
+                                  >
+                                    <BrainCircuit size={10} />
+                                  </button>
+                                )}
+                                {(isAdmin || isGestor || c.uid === userProfile?.uid) && (
+                                  <button 
+                                    onClick={() => onEditCollaborator(c)}
+                                    className="bg-white text-gray-900 p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                    title="Editar"
+                                  >
+                                    <Edit2 size={10} />
+                                  </button>
+                                )}
+                                {(isAdmin || isGestor) && (
+                                  <button 
+                                    onClick={() => onDeleteCollaborator(c.id)}
+                                    className="bg-white text-red-500 p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform"
+                                    title="Remover Colaborador"
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
+                                )}
                               </div>
                             </div>
                             <div className="text-center relative flex flex-col items-center w-full">
@@ -2211,17 +2749,19 @@ const SectorDashboard = React.memo(function SectorDashboard({
                           )}
                           
                           <div className="absolute bottom-2 right-2 z-20">
-                            <button 
-                              onClick={() => onToggleHighlight(sector.id, monthId, c.id)}
-                              className={cn(
-                                "p-1.5 rounded-lg transition-all flex items-center gap-1",
-                                isHighlight ? "bg-white/20" : "opacity-0 group-hover:opacity-100 hover:bg-white/20"
-                              )}
-                              title="Destaque do Mês"
-                            >
-                              {!isHighlight && <Award size={16} className="text-white/40" />}
-                              {isHighlight && <Settings size={12} className="text-white/60" />}
-                            </button>
+                            {(isAdmin || isGestor) && (
+                              <button 
+                                onClick={() => onToggleHighlight(sector.id, monthId, c.id)}
+                                className={cn(
+                                  "p-1.5 rounded-lg transition-all flex items-center gap-1",
+                                  isHighlight ? "bg-white/20" : "opacity-0 group-hover:opacity-100 hover:bg-white/20"
+                                )}
+                                title="Destaque do Mês"
+                              >
+                                {!isHighlight && <Award size={16} className="text-white/40" />}
+                                {isHighlight && <Settings size={12} className="text-white/60" />}
+                              </button>
+                            )}
                           </div>
                         </th>
                       );
@@ -2282,8 +2822,12 @@ const SectorDashboard = React.memo(function SectorDashboard({
                                          <span className="text-xs sm:text-sm font-bold text-gray-700 tracking-tight truncate">{indicator.name}</span>
                                       </div>
                                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => onEditIndicator(indicator)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={12} /></button>
-                                        <button onClick={() => onDeleteIndicator(indicator.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={12} /></button>
+                                        {(isAdmin || isGestor) && (
+                                          <>
+                                            <button onClick={() => onEditIndicator(indicator)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={12} /></button>
+                                            <button onClick={() => onDeleteIndicator(indicator.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={12} /></button>
+                                          </>
+                                        )}
                                       </div>
                                     </div>
                                   </td>
@@ -2378,7 +2922,6 @@ const SectorDashboard = React.memo(function SectorDashboard({
         </div>
 
         <div className="flex flex-col gap-8 sticky top-24 self-start h-fit">
-          {/* Brasão do Time */}
           <div 
             className="flex-1 flex flex-col items-center justify-center text-center group cursor-pointer relative"
             onClick={onEditSector}
@@ -2450,6 +2993,14 @@ const GeneralIndicatorView = React.memo(function GeneralIndicatorView({
   onDeleteIndicator: (id: string) => void,
   onReorderIndicators: (items: Indicator[]) => void
 }) {
+  const { isAdmin, userProfile } = useAuth();
+  const visibleSectors = useMemo(() => {
+    if (isAdmin) return SECTORS;
+    const profileSectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || ''];
+    const profileSectorIds = profileSectors.map(s => normalizeId(s));
+    return SECTORS.filter(s => profileSectorIds.includes(normalizeId(s.name)));
+  }, [isAdmin, userProfile?.setor]);
+
   const safeIndicators = useMemo(() => indicators.filter(Boolean), [indicators]);
   const currentDates = operationDates
     .filter(od => od.monthId === monthId && (od.operation === operation || od.operation === 'both' || !od.operation))
@@ -2515,7 +3066,7 @@ const GeneralIndicatorView = React.memo(function GeneralIndicatorView({
                 ))}
               </tr>
             </thead>
-            {SECTORS.map(sector => {
+            {visibleSectors.map(sector => {
               const sectorIndicators = safeIndicators.filter(i => 
                 normalizeId(i.sectorId) === normalizeId(sector.id) && 
                 i.isGeneral === true && 
@@ -2646,6 +3197,14 @@ function OverviewView({
   activeOperation: 'sittax' | 'openix',
   onNavigate: (id: string) => void 
 }) {
+  const { isAdmin, userProfile } = useAuth();
+  const visibleSectors = useMemo(() => {
+    if (isAdmin) return sectors;
+    const profileSectors = Array.isArray(userProfile?.setor) ? userProfile.setor : [userProfile?.setor || ''];
+    const profileSectorIds = profileSectors.map(s => normalizeId(s));
+    return sectors.filter(s => profileSectorIds.includes(normalizeId(s.name)));
+  }, [isAdmin, userProfile?.setor, sectors]);
+
   return (
     <div className="space-y-6 sm:space-y-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
@@ -2656,7 +3215,7 @@ function OverviewView({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-        {sectors.map(sector => {
+        {visibleSectors.map(sector => {
           const sectorColabs = collaborators.filter(c => c.sectorId === sector.id);
           const sectorInds = indicators.filter(i => i.sectorId === sector.id);
           
@@ -2696,7 +3255,7 @@ function OverviewView({
                     {sectorColabs.slice(0, 3).map((c, i) => (
                       <img 
                         key={c.id} 
-                        src={c.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`} 
+                        src={c.avatarUrl || c.fotoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.name)}&background=random`} 
                         className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg border-2 border-white bg-gray-100 object-cover aspect-square" 
                         alt={c.name}
                         referrerPolicy="no-referrer"
@@ -2994,5 +3553,121 @@ function SectorForm({ initialData, onSubmit, onCancel }: { initialData?: Sector,
         <Button type="submit" className="w-full sm:w-auto">Salvar Alterações</Button>
       </div>
     </form>
+  );
+}
+
+function SettingsView({ userProfile }: { userProfile: User | null }) {
+  const { resetPassword } = useAuth();
+  const [photoURL, setPhotoURL] = useState(userProfile?.fotoURL || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleUpdatePhoto = async () => {
+    if (!userProfile) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'usuarios', userProfile.uid), { fotoURL: photoURL });
+      toast.success('Foto de perfil atualizada com sucesso!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao atualizar foto.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!userProfile?.email) return;
+    try {
+      await resetPassword(userProfile.email);
+      toast.success('E-mail de redefinição de senha enviado!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao enviar e-mail.');
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-8">
+      <div>
+        <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2">Configurações</h2>
+        <p className="text-gray-500 font-medium">Gerencie suas informações de perfil e segurança.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <Card title="Perfil" subtitle="Altere sua imagem de exibição">
+          <div className="flex flex-col items-center space-y-6">
+            <div className="relative group">
+              <div className="w-32 h-32 rounded-3xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden">
+                <img 
+                  src={photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.nome || 'U')}&background=random`} 
+                  alt="Preview" 
+                  className="w-full h-full object-cover" 
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            </div>
+            
+            <div className="w-full space-y-4">
+              <Input 
+                label="URL da Foto" 
+                value={photoURL} 
+                onChange={(e) => setPhotoURL(e.target.value)}
+                placeholder="https://exemplo.com/foto.jpg"
+              />
+              <Button 
+                onClick={handleUpdatePhoto} 
+                disabled={saving} 
+                className="w-full"
+              >
+                {saving ? 'Salvando...' : 'Atualizar Foto'}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Segurança" subtitle="Gerencie seu acesso">
+          <div className="flex flex-col items-center justify-center h-full space-y-6 py-6 font-medium text-center">
+            <div className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center text-[#FF6B00]">
+              <Key size={32} />
+            </div>
+            <div>
+              <h4 className="font-bold text-gray-900">Alterar Senha</h4>
+              <p className="text-sm text-gray-500 mt-1">Por segurança, enviaremos um link de redefinição para o seu e-mail.</p>
+            </div>
+            <Button 
+              variant="outline" 
+              onClick={handlePasswordReset}
+              className="w-full border-orange-200 text-[#FF6B00] hover:bg-orange-50"
+            >
+              <Mail size={18} />
+              Enviar E-mail de Redefinição
+            </Button>
+          </div>
+        </Card>
+      </div>
+
+      <Card title="Informações da Conta">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Nome</p>
+            <p className="font-bold text-gray-900">{userProfile?.nome}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">E-mail</p>
+            <p className="font-bold text-gray-900">{userProfile?.email}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Cargo</p>
+            <p className="font-bold text-gray-900">{userProfile?.cargo}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Setor</p>
+            <p className="font-bold text-gray-900">
+              {Array.isArray(userProfile?.setor) ? userProfile.setor.join(' & ') : userProfile?.setor}
+            </p>
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 }

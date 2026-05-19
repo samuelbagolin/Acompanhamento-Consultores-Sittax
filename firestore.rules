@@ -1,0 +1,55 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "samuel.bagolin@setuptecnologia.com.br" ||
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role == "admin"
+      );
+    }
+
+    function isLider() {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role == "lider" ||
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.liderSetor == true
+      );
+    }
+
+    match /usuarios/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+      allow update: if request.auth.uid == userId;
+    }
+
+    match /avaliacoes/{docId} {
+      allow read: if isAdmin()
+        || resource.data.uid == request.auth.uid
+        || (
+          isLider() &&
+          resource.data.setor == get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.setor
+        );
+      allow write: if isAdmin() || isLider();
+    }
+
+    match /indicadores/{docId} {
+      allow read: if isAdmin()
+        || resource.data.uid == request.auth.uid
+        || (
+          isLider() &&
+          resource.data.setor == get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.setor
+        );
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if isAdmin();
+      allow read: if isAuthenticated();
+    }
+  }
+}

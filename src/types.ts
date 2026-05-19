@@ -18,8 +18,12 @@ export interface Collaborator {
   id: string;
   monthId: string;
   sectorId: string;
+  uid?: string;
   name: string;
   avatarUrl?: string;
+  fotoURL?: string;
+  cargo?: string;
+  status?: string;
   meta?: number;
   order?: number;
 }
@@ -65,10 +69,28 @@ export interface SectorHighlight {
 
 export type DevelopmentClassification = 'DIRECIONAR' | 'GUIAR' | 'MOTIVAR' | 'DELEGAR';
 
+export type UserRole = 'admin' | 'lider' | 'colaborador';
+
+export interface User {
+  uid: string;
+  nome: string;
+  email: string;
+  cargo?: string;
+  setor?: string | string[];
+  role: UserRole;
+  liderSetor?: boolean;
+  fotoURL?: string;
+  ativo: boolean;
+  createdAt?: any;
+}
+
 export interface DevelopmentEvaluation {
   id: string;
   monthId: string;
   collaboratorId: string;
+  uid?: string;
+  liderId?: string;
+  liderNome?: string;
   evaluationDate: string;
   technicalScores: Record<string, number>;
   behavioralScores: Record<string, number>;
@@ -76,6 +98,7 @@ export interface DevelopmentEvaluation {
   behavioralAverage: number;
   classification: DevelopmentClassification;
   manualClassification?: DevelopmentClassification;
+  comments?: string;
   updatedAt: any;
 }
 
